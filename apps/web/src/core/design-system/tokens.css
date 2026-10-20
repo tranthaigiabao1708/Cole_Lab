@@ -1,0 +1,86 @@
+/* Design tokens — "Atlas kỹ thuật" (docs/design/10 §1.4). Change values here, never inline. */
+:root {
+  /* Ink (dark stage, workspace) */
+  --ink-950: #0d0e10;
+  --ink-900: #131418;
+  --ink-800: #1a1c20;
+  --ink-700: #22252a;
+  --ink-600: #2b2e34;
+  --ink-500: #3a3e46;
+  --ink-400: #5a5f69;
+
+  /* Paper (content pages) */
+  --paper-0: #faf9f6;
+  --paper-50: #f3f1ec;
+  --paper-100: #ebe8e1;
+  --paper-200: #e3dfd6;
+  --paper-300: #d2ccc0;
+
+  /* Text */
+  --graphite-900: #17181b;
+  --graphite-700: #3b3d42;
+  --graphite-500: #6b6d72;
+  --graphite-400: #8b8c90;
+  --bone-100: #ece9e2;
+  --bone-300: #b9b5ac;
+  --bone-500: #8d8a83;
+
+  /* Accent + tracks */
+  --ember-300: #f0a07c;
+  --ember-500: #e06a3b;
+  --ember-600: #c8582c;
+  --ember-glow: rgba(224, 106, 59, 0.55);
+  --track-ai: #e06a3b;
+  --track-de: #7f9a8c;
+  --track-de-fog: #dfe5e0;
+  --track-ba: #b59a6a;
+  --track-ba-paper: #ece4d4;
+
+  /* Signals (critical is deliberately distinct from ember, always paired with a text label) */
+  --signal-critical: #c8372d;
+  --signal-critical-bg: #f7e3df;
+  --signal-pass: #4f8a5b;
+  --signal-pass-bg: #e2eee3;
+  --signal-warn: #c9962e;
+  --signal-warn-bg: #f5ecd6;
+
+  /* Type */
+  --font-sans: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Newsreader', 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 24px;
+  --fs-2xl: 34px;
+  --fs-3xl: 52px;
+  --fs-4xl: 76px;
+
+  /* Geometry */
+  --radius: 2px;
+  --hair: 1px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 72px;
+  --page-max: 1320px;
+  --topbar-h: 56px;
+
+  /* Motion */
+  --dur-ui: 180ms;
+  --dur-reveal: 600ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.1, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-ui: 0ms;
+    --dur-reveal: 0ms;
+  }
+}

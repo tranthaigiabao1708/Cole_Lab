@@ -1,0 +1,39 @@
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="COLE_", env_file=".env", extra="ignore")
+
+    env: str = "dev"
+    var_dir: Path = REPO_ROOT / "var"
+    database_url: str = ""
+    session_ttl_hours: int = 12
+    cookie_secure: bool = False
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    # Runner (execution plane). API/worker never talk to Docker directly.
+    runner_url: str = "http://127.0.0.1:8090"
+    runner_token: str = "dev-runner-token-change-me"
+
+    # Content packages (assignments, course seeds)
+    content_dir: Path = REPO_ROOT / "content"
+    simulators_dir: Path = REPO_ROOT / "simulators"
+
+    @property
+    def storage_dir(self) -> Path:
+        return self.var_dir / "storage"
+
+    @property
+    def workspaces_dir(self) -> Path:
+        return self.var_dir / "workspaces"
+
+    @property
+    def db_url(self) -> str:
+        return self.database_url or f"sqlite:///{(self.var_dir / 'cole.db').as_posix()}"
+
+
+settings = Settings()

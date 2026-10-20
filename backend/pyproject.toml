@@ -1,0 +1,26 @@
+[project]
+name = "cole-platform"
+version = "0.1.0"
+description = "Nền tảng đào tạo thực hành theo bài toán doanh nghiệp — backend (api + worker)"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "sqlalchemy>=2",
+  "pydantic>=2",
+  "pydantic-settings",
+  "argon2-cffi",
+  "openpyxl",
+  "python-multipart",
+  "httpx",
+  "pyyaml",
+  "jsonschema",
+  "websockets",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
