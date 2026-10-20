@@ -39,11 +39,15 @@ def health():
 
 
 ROUTERS = [identity_router, catalog_router, import_router, assignments_router, workspaces_router, submissions_router]
-try:  # Phase 3+ routers
+try:
     from cole_platform.modules.runs.api import router as runs_router
     from cole_platform.modules.plugins.api import router as plugins_router
 
     ROUTERS += [runs_router, plugins_router]
+except ImportError:
+    pass
+
+try:
     from cole_platform.modules.evaluations.api import router as evaluations_router
     from cole_platform.modules.llm_gateway.api import router as llm_router
 

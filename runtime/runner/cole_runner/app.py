@@ -179,6 +179,30 @@ def reap():
 
 
 @app.get("/containers", dependencies=[Depends(auth)])
+def list_containers():
+    c = engine.client()
+    items = []
+    for cont in c.containers.list(all=True, filters={"label": engine.LABEL_MANAGED + "=1"}):
+        items.append({
+            "id": cont.short_id,
+            "name": cont.name,
+            "status": cont.status,
+            "image": (cont.image.tags[0] if cont.image and cont.image.tags else cont.image.short_id) if cont.image else "",
+            "labels": cont.labels or {},
+            "created": cont.attrs.get("Created", ""),
+        })
+    return {"containers": items}
+
+
+@app.get("/images", dependencies=[Depends(auth)])
+def list_images():
+    tags = []
+    for img in engine.client().images.list():
+        tags.extend(img.tags or [])
+    return {"tags": tags}
+
+
+@app.get("/containers", dependencies=[Depends(auth)])
 def containers():
     out = []
     for c in engine.client().containers.list(all=True, filters={"label": engine.LABEL_MANAGED + "=1"}):

@@ -37,7 +37,7 @@ def submit(ws_id: str, body: SubmitIn, p: Principal = Depends(current_user), db:
         from cole_platform.modules.runs.service import enqueue_validate_submission
 
         enqueue_validate_submission(db, p, s)
-    except ImportError:
+    except Exception:
         pass
     return out
 

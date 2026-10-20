@@ -73,6 +73,13 @@ def run(reset: bool = False) -> None:
             seed_assignments(db)
         except ImportError:
             pass
+        try:
+            from cole_platform.modules.plugins import service as plug_svc
+
+            plug_svc.scan_and_register(db)
+            plug_svc.sync_images(db)
+        except ImportError:
+            pass
         print("Seed OK. Users: admin/teacher/student@cole.local, password:", DEV_PASSWORD)
     finally:
         db.close()

@@ -1,4 +1,5 @@
-import { Link, useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../../core/api'
 import { vi } from '../../core/copy/vi'
 import { ErrorNote, Loading, Metric, PageHead, Signal, formatDateTime, usePageMeta } from '../../core/design-system/components'
@@ -96,7 +97,24 @@ export function SubmissionsPage() {
 
 export function SubmissionDetailPage() {
   const { submissionId = '' } = useParams()
+  const nav = useNavigate()
   const { data: s, error, loading, reload } = useAsync(() => api.get<Submission>(`/submissions/${submissionId}`), [submissionId])
+  const [running, setRunning] = useState(false)
+  const [runErr, setRunErr] = useState<unknown>(null)
+
+  async function triggerRun() {
+    if (!s) return
+    setRunning(true)
+    setRunErr(null)
+    try {
+      const run = await api.post<{ id: string }>(`/submissions/${s.id}/run`, { profile: 'full' })
+      nav(`/runs/${run.id}`)
+    } catch (e) {
+      setRunErr(e)
+      setRunning(false)
+    }
+  }
+
   usePageMeta(s ? `${vi.submissions.heading} #${s.seq} — ${s.assignment?.title ?? ''}` : `${vi.submissions.heading} — COLE LAB`)
   if (loading) return <div className="page"><Loading /></div>
   if (error || !s) return <div className="page"><ErrorNote error={error} onRetry={reload} id="sub-error" /></div>
@@ -111,7 +129,18 @@ export function SubmissionDetailPage() {
             <span className="muted">#{s.seq}</span>
           </>
         }
-      />
+      >
+        <button
+          className="btn"
+          id="btn-trigger-run"
+          onClick={triggerRun}
+          disabled={running}
+        >
+          <Icon name="play" />
+          {running ? vi.run.rerunning : 'Chạy đánh giá'}
+        </button>
+      </PageHead>
+      {runErr ? <ErrorNote error={runErr} id="trigger-run-error" /> : null}
       <div style={{ display: 'flex', gap: 'var(--space-7)', margin: 'var(--space-5) 0', flexWrap: 'wrap' }}>
         <Metric value={s.file_count} label={vi.submissions.files} />
         <Metric value={bytes(s.size)} label={vi.submissions.size} />

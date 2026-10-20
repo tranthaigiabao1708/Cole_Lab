@@ -1,0 +1,14 @@
+id: cole.echo-sample
+version: 1.0.0
+contract: simulator.v1
+name: Bài mẫu nền tảng (chuẩn hóa văn bản)
+description: Gọi hàm predict của học viên trên từng test case và so sánh đầu ra với kết quả mong đợi.
+image: cole/sim-echo-sample:1.0.0
+renderer: generic-table@1
+modes: [describe, validate-profile, validate-submission, run]
+subject: {kind: python_entrypoint, artifact: entry, input_kind: json}
+needs_llm: false
+profile_schema:
+  comparison: {enum: [exact, casefold]}
+  pass_threshold: {type: number, min: 0, max: 1}
+  timeout_per_case_s: {type: number, min: 1, max: 60}

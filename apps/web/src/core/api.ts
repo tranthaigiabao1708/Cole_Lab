@@ -123,3 +123,89 @@ export interface CourseDetail extends CourseSummary {
   modules: Module[]
   assignments: AssignmentSummary[]
 }
+
+export interface PluginVersionOut {
+  id: string
+  plugin_id: string
+  version: string
+  contract: string
+  renderer: string
+  image: string
+  status: 'pending' | 'building' | 'ready' | 'disabled' | 'build_failed'
+  build_log: string | null
+  enabled: boolean
+  built_at: string | null
+}
+
+export interface SimulatorPluginOut {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  author: string | null
+  active_version: string | null
+  versions: PluginVersionOut[]
+}
+
+export interface TestCaseResultOut {
+  id: string
+  case_key: string
+  order: number
+  status: 'passed' | 'failed' | 'error' | 'skipped'
+  score: number | null
+  latency_ms: number | null
+  output?: unknown
+  message?: string | null
+  detail?: unknown
+  input?: unknown
+  expected?: unknown
+}
+
+export interface RunDetailOut {
+  id: string
+  submission_id: string
+  assignment?: { id: string; slug: string; title: string } | null
+  plugin?: { id: string; version: string; renderer: string } | null
+  mode: string
+  status: 'queued' | 'preparing' | 'running' | 'evaluating' | 'succeeded' | 'failed' | 'error' | 'timeout' | 'cancelled'
+  passed: boolean | null
+  score: number | null
+  summary?: {
+    headline?: Record<string, unknown>
+    metrics?: Record<string, unknown>
+    passed_cases?: number
+    total_cases?: number
+    duration_s?: number
+  } | null
+  validation_report?: unknown
+  error?: { code?: string; message_vi?: string } | null
+  runner_info?: unknown
+  columns?: Array<{ key: string; label: string }> | null
+  cases: TestCaseResultOut[]
+  events?: unknown[]
+  logs?: { evaluator?: string; subject?: string }
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface ContainerInfo {
+  id: string
+  name: string
+  status: string
+  image: string
+  labels: Record<string, string>
+  created: string
+}
+
+export interface RuntimeStatusOut {
+  health: {
+    ok: boolean
+    engine?: string
+    isolation?: { level: string; runtime: string; network_none: boolean }
+    image?: string
+    error?: string
+  }
+  containers: ContainerInfo[]
+}
+

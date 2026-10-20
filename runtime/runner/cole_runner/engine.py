@@ -149,7 +149,7 @@ def workspace_status(ws_id: str) -> dict:
                 cpu_percent=round((cpu_delta / sys_delta) * ncpu * 100 / settings.ws_cpus, 1) if sys_delta > 0 else 0.0,
                 pids=s.get("pids_stats", {}).get("current"),
             )
-        except APIError:
+        except Exception:  # noqa: BLE001
             pass
     return out
 

@@ -11,6 +11,9 @@ import { DashboardPage } from '../pages/dashboard/DashboardPage'
 import { ImportWizardPage } from '../pages/teach/ImportWizardPage'
 import { AssignmentPage } from '../pages/assignments/AssignmentPage'
 import { SubmissionDetailPage, SubmissionsPage } from '../pages/submissions/SubmissionsPages'
+import { RunPage } from '../pages/runs/RunPage'
+import { PluginsPage } from '../pages/admin/PluginsPage'
+import { RuntimePage } from '../pages/admin/RuntimePage'
 import { Shell } from './Shell'
 
 const WorkspacePage = lazy(() => import('../features/ide/WorkspacePage').then((m) => ({ default: m.WorkspacePage })))
@@ -70,9 +73,12 @@ export function App() {
             <Route path="assignments/:assignmentId" element={<AssignmentPage />} />
             <Route path="submissions" element={<SubmissionsPage />} />
             <Route path="submissions/:submissionId" element={<SubmissionDetailPage />} />
+            <Route path="runs/:runId" element={<RunPage />} />
             <Route path="teach/import" element={<RequireAuth role="teacher"><ImportWizardPage /></RequireAuth>} />
             <Route path="teach/import/:importId" element={<RequireAuth role="teacher"><ImportWizardPage /></RequireAuth>} />
             <Route path="admin/users" element={<RequireAuth role="admin"><AdminUsersPage /></RequireAuth>} />
+            <Route path="admin/plugins" element={<RequireAuth role="admin"><PluginsPage /></RequireAuth>} />
+            <Route path="admin/runtime" element={<RequireAuth role="admin"><RuntimePage /></RequireAuth>} />
             <Route path="admin/audit" element={<RequireAuth role="admin"><AdminAuditPage /></RequireAuth>} />
             <Route path="*" element={<NotFound />} />
           </Route>

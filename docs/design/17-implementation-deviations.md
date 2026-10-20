@@ -13,6 +13,9 @@ Tài liệu này ghi lại **trung thực** những điểm mà mã nguồn POC 
 | D7 | 5 | Gateway LLM gọi nhà cung cấp thật | Provider mặc định là `mock` (tất định); cấu hình OpenAI-compatible qua biến môi trường | Không có khóa API trong môi trường dev | Bật bằng `COLE_LLM_PROVIDER=openai` |
 | D8 | 2 | Monaco/xterm | Monaco được đóng gói cục bộ (không CDN), worker build bằng Vite; chunk IDE ~1,6 MB + editor.api ~2,7 MB (chỉ tải khi mở workspace) | Chạy offline được | Có thể cắt bớt ngôn ngữ Monaco sau |
 | D9 | 2 | Trình soạn thảo đồng bộ với tệp | Tab "sạch" được đọc lại từ đĩa mỗi 6 giây và khi cửa sổ được focus; tab đang sửa dở không bị ghi đè | Không có file-watcher đẩy sự kiện | Backlog: đẩy sự kiện thay đổi tệp qua WebSocket |
+| D10 | 3 | Hàng đợi tác vụ (doc 02, doc 08) | Queue chạy qua DB-polling loop trong `main_worker.py` (SELECT queued → claim → execute → UPDATE) | Giảm thiểu phụ thuộc hạ tầng ngoài (Redis/Valkey/RabbitMQ) cho môi trường POC local | Chuyển sang Arq/Valkey khi scale nhiều worker |
+| D11 | 3 | Giao vận container chấm bài | Simulator container và Subject container giao tiếp qua mạng nội bộ Docker không Internet (`network_mode=none`), trao đổi dữ liệu qua thư mục exchange `var/exchange/<run_id>` | Bảo mật tuyệt đối, ngăn rò rỉ đề/kết quả bài thi | Giữ nguyên kiến trúc chuẩn |
+| D12 | 3 | Quản lý container runtime | Runner agent trên Windows kết nối Docker daemon qua named pipe nội bộ của Docker Desktop | Tránh mở cổng TCP Docker không an toàn trên host | Trên Linux server production dùng unix socket `/var/run/docker.sock` |
 
 ## Kiểm chứng bảo mật đã chạy (Phase 2)
 
