@@ -26,10 +26,7 @@ def get_course(course_id: str, p: Principal = Depends(current_user), db: Session
     c, role = service.get_course_for(db, p, course_id)
     out = _course_out(db, c, role)
     out["modules"] = service.course_tree(db, c.id)
-    try:
-        from cole_platform.modules.assignments import service as asg
+    from cole_platform.modules.assignments import service as asg
 
-        out["assignments"] = asg.list_for_course(db, p, c.id, role)
-    except ImportError:
-        out["assignments"] = []
+    out["assignments"] = asg.list_for_course(db, p, c.id, role) if c.execution_status == "active" else []
     return out

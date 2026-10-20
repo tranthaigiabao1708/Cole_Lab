@@ -1,4 +1,4 @@
-﻿import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from '../core/auth'
 import { vi } from '../core/copy/vi'
@@ -9,7 +9,11 @@ import { CourseDetailPage } from '../pages/courses/CourseDetailPage'
 import { CoursesPage } from '../pages/courses/CoursesPage'
 import { DashboardPage } from '../pages/dashboard/DashboardPage'
 import { ImportWizardPage } from '../pages/teach/ImportWizardPage'
+import { AssignmentPage } from '../pages/assignments/AssignmentPage'
+import { SubmissionDetailPage, SubmissionsPage } from '../pages/submissions/SubmissionsPages'
 import { Shell } from './Shell'
+
+const WorkspacePage = lazy(() => import('../features/ide/WorkspacePage').then((m) => ({ default: m.WorkspacePage })))
 
 function RequireAuth({ children, role }: { children: ReactNode; role?: 'teacher' | 'admin' }) {
   const { user, ready } = useAuth()
@@ -44,6 +48,16 @@ export function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route
+            path="/workspace/:workspaceId"
+            element={
+              <RequireAuth>
+                <Suspense fallback={<div className="ide ide--loading"><Loading /></div>}>
+                  <WorkspacePage />
+                </Suspense>
+              </RequireAuth>
+            }
+          />
+          <Route
             element={
               <RequireAuth>
                 <Shell />
@@ -53,6 +67,9 @@ export function App() {
             <Route index element={<DashboardPage />} />
             <Route path="courses" element={<CoursesPage />} />
             <Route path="courses/:track/:courseId" element={<CourseDetailPage />} />
+            <Route path="assignments/:assignmentId" element={<AssignmentPage />} />
+            <Route path="submissions" element={<SubmissionsPage />} />
+            <Route path="submissions/:submissionId" element={<SubmissionDetailPage />} />
             <Route path="teach/import" element={<RequireAuth role="teacher"><ImportWizardPage /></RequireAuth>} />
             <Route path="teach/import/:importId" element={<RequireAuth role="teacher"><ImportWizardPage /></RequireAuth>} />
             <Route path="admin/users" element={<RequireAuth role="admin"><AdminUsersPage /></RequireAuth>} />

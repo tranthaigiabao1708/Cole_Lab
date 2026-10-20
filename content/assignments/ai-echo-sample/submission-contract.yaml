@@ -1,0 +1,14 @@
+contract: submission/v1
+plugin: cole.echo-sample
+artifacts:
+  entry:
+    required: true
+    kind: python_entrypoint
+    signature: "predict(input: dict) -> dict"
+    label: Hàm xử lý
+  report:
+    required: false
+    kind: file
+    accepted_formats: [md]
+    max_size_mb: 2
+    label: Báo cáo

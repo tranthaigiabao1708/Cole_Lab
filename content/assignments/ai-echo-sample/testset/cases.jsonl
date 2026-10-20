@@ -1,0 +1,10 @@
+{"key": "tc_001", "input": {"text": "  Xin   chào  "}, "expected": {"text": "xin chào"}, "tags": ["whitespace"]}
+{"key": "tc_002", "input": {"text": "HELLO\tWorld"}, "expected": {"text": "hello world"}, "tags": ["case"]}
+{"key": "tc_003", "input": {"text": "Dòng 1\n\n  Dòng 2"}, "expected": {"text": "dòng 1 dòng 2"}, "tags": ["whitespace"]}
+{"key": "tc_004", "input": {"text": "Tie\u0302\u0301ng Vie\u0323\u0302t"}, "expected": {"text": "tiếng việt"}, "tags": ["unicode"], "notes": [{"level": "info", "text": "Đầu vào dùng dấu tổ hợp (NFD)."}]}
+{"key": "tc_005", "input": {"text": ""}, "expected": {"text": ""}, "tags": ["edge"]}
+{"key": "tc_006", "input": {"text": "   "}, "expected": {"text": ""}, "tags": ["edge"]}
+{"key": "tc_007", "input": {"text": "ĐẠI HỌC  Bách Khoa"}, "expected": {"text": "đại học bách khoa"}, "tags": ["case", "unicode"]}
+{"key": "tc_008", "input": {"text": "a\u00a0b"}, "expected": {"text": "a b"}, "tags": ["whitespace"], "notes": [{"level": "info", "text": "Có ký tự khoảng trắng không ngắt (U+00A0)."}]}
+{"key": "tc_009", "input": {"text": "Mã: AI-M1-B4"}, "expected": {"text": "mã: ai-m1-b4"}, "tags": ["case"]}
+{"key": "tc_010", "input": {"text": "\r\nKết thúc\r\n"}, "expected": {"text": "kết thúc"}, "tags": ["whitespace"]}

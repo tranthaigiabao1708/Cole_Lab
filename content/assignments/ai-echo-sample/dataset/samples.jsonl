@@ -1,0 +1,3 @@
+{"input": {"text": "  Xin   chào  "}, "expected": {"text": "xin chào"}}
+{"input": {"text": "HELLO\tWorld"}, "expected": {"text": "hello world"}}
+{"input": {"text": "Dòng 1\nDòng 2"}, "expected": {"text": "dòng 1 dòng 2"}}

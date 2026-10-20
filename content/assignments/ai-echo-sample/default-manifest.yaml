@@ -1,0 +1,4 @@
+manifest: submission/v1
+artifacts:
+  entry: {entry: "solution.normalize:predict"}
+  report: {path: REPORT.md}

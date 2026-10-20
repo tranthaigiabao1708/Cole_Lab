@@ -1,0 +1,14 @@
+slug: ai-echo-sample
+title: Chuẩn hóa văn bản đầu vào (bài mẫu nền tảng)
+course: ai-engineer-2026
+lesson: {module_code: M1, session: 4}
+assignment_type: ai.sample-text
+plugin: {id: cole.echo-sample, version: "^1.0"}
+run_command: python run_local.py
+readme: README.md
+template: template
+dataset: dataset
+testset: testset
+visibility: {input: after_run, expected: after_run, notes: visible}
+rubric: []
+limits: {timeout_s: 120}

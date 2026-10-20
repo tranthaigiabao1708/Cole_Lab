@@ -1,4 +1,4 @@
-﻿import { useEffect, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { vi } from '../copy/vi'
 import { ApiError } from '../api'
 import { Icon } from './icons'
@@ -104,6 +104,7 @@ export function pad2(n: number): string {
 }
 
 export function formatDateTime(iso: string): string {
-  const d = new Date(iso)
+  const hasZone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(iso)
+  const d = new Date(hasZone ? iso : iso + 'Z')
   return d.toLocaleString('vi-VN', { hour12: false })
 }

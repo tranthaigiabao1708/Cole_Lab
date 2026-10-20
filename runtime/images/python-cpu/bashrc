@@ -1,0 +1,4 @@
+# COLE workspace shell
+export PS1='\[\e[38;5;173m\]\w\[\e[0m\] $ '
+alias ll='ls -la'
+cd /workspace 2>/dev/null || true

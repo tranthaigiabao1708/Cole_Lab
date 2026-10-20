@@ -1256,3 +1256,69 @@
     padding: var(--space-6) var(--space-4) var(--space-7);
   }
 }
+
+/* Prose — rendered teacher markdown */
+.prose {
+  max-width: 72ch;
+  font-size: var(--fs-md);
+  line-height: 1.7;
+  color: var(--graphite-900);
+}
+.prose h1,
+.prose h2,
+.prose h3 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  line-height: 1.25;
+  margin: 1.6em 0 0.5em;
+}
+.prose h1 { font-size: var(--fs-xl); font-style: italic; }
+.prose h2 { font-size: var(--fs-lg); border-bottom: var(--hair) solid var(--paper-300); padding-bottom: 4px; }
+.prose h3 { font-size: var(--fs-md); }
+.prose > :first-child { margin-top: 0; }
+.prose p, .prose ul, .prose ol { margin: 0 0 1em; }
+.prose ul, .prose ol { padding-left: 1.4em; }
+.prose li { margin: 0.25em 0; }
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--paper-100);
+  padding: 1px 5px;
+  border-radius: var(--radius);
+}
+.prose pre {
+  background: var(--ink-900);
+  color: var(--bone-100);
+  padding: var(--space-4);
+  border-radius: var(--radius);
+  overflow: auto;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+.prose pre code { background: none; padding: 0; color: inherit; }
+.prose table { border-collapse: collapse; margin: 0 0 1em; font-size: var(--fs-sm); }
+.prose th, .prose td { border: var(--hair) solid var(--paper-300); padding: 6px 10px; text-align: left; }
+.prose th { background: var(--paper-50); font-weight: 600; }
+.prose blockquote {
+  margin: 0 0 1em;
+  padding: 2px 0 2px var(--space-4);
+  border-left: 2px solid var(--ember-500);
+  color: var(--graphite-700);
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+.prose a { color: var(--ember-600); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Structural error on paper surfaces (submission detail) */
+.mart__err--paper {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--signal-critical);
+  background: var(--signal-critical-bg);
+  font-size: var(--fs-sm);
+}
+.mart__err--paper strong { color: var(--signal-critical); }
+.mart__err--paper code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--graphite-500); }
