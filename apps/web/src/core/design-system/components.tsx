@@ -108,3 +108,43 @@ export function formatDateTime(iso: string): string {
   const d = new Date(hasZone ? iso : iso + 'Z')
   return d.toLocaleString('vi-VN', { hour12: false })
 }
+
+export function RatingControl({
+  value,
+  onChange,
+  disabled = false,
+  id,
+}: {
+  value: number
+  onChange?: (val: number) => void
+  disabled?: boolean
+  id?: string
+}) {
+  return (
+    <div className="rating-control" id={id} role="group" aria-label="Đánh giá chất lượng">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          disabled={disabled}
+          className={`rating-star ${star <= value ? 'rating-star--active' : ''}`}
+          onClick={() => onChange && onChange(star)}
+          title={`${star} sao`}
+          aria-label={`${star} sao`}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: disabled ? 'default' : 'pointer',
+            fontSize: '1.25rem',
+            padding: '2px 4px',
+            color: star <= value ? 'var(--ember-500, #d97706)' : 'var(--graphite-300, #cbd5e1)',
+            transition: 'transform 0.15s ease, color 0.15s ease',
+          }}
+        >
+          {star <= value ? '★' : '☆'}
+        </button>
+      ))}
+    </div>
+  )
+}
+

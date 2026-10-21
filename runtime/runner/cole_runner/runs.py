@@ -42,7 +42,10 @@ def _start_subject(run_id: str, spec: dict, net_name: str, ex: Path, ttl: int):
         command = ["python", "/opt/cole/harness.py"]
         env.update(COLE_ENTRY=subj["entry"], COLE_INPUT_KIND=subj.get("input_kind", "json"), COLE_PORT="8080")
     elif subj["kind"] == "http_service":
-        command = subj["command"]
+        command = subj.get("command")
+        if not command:
+            entry = subj.get("entry") or "app.main:app"
+            command = ["uvicorn", entry, "--host", "0.0.0.0", "--port", "8080"]
         env.update(PORT="8080")
     else:
         raise ValueError(f"unknown subject kind {subj['kind']}")

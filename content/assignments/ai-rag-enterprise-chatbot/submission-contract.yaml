@@ -1,0 +1,14 @@
+contract_version: "1.0"
+modes:
+  - http_service
+artifacts:
+  entry:
+    kind: python_entrypoint
+    format: "module:variable"
+    required: true
+    description: "FastAPI ASGI application (ví dụ: app.main:app)"
+  report:
+    kind: file
+    format: markdown
+    required: false
+    description: "Báo cáo thiết kế giải pháp RAG (REPORT.md)"

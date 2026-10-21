@@ -1,0 +1,35 @@
+id: cole.rag-chatbot
+version: 1.0.0
+contract: simulator.v1
+name: RAG Enterprise Chatbot Simulator
+description: "Kiểm thử hỏi đáp RAG trên tài liệu doanh nghiệp: multimodal inline base64, xử lý 8 tình huống lỗi, trích dẫn nguồn và hỗ trợ rubric tự đánh giá."
+image: cole/sim-rag-chatbot:1.0.0
+renderer: rag-chat@1
+modes: [describe, validate-profile, validate-submission, run]
+subject:
+  kind: http_service
+  artifact: entry
+  port: 8000
+  health_path: /healthz
+needs_llm: true
+profile_schema:
+  llm_budget_per_run_usd:
+    type: number
+    min: 0.0
+    max: 10.0
+  per_case_timeout_seconds:
+    type: integer
+    min: 1
+    max: 120
+  startup_timeout_seconds:
+    type: integer
+    min: 1
+    max: 300
+  max_answer_chars:
+    type: integer
+    min: 100
+    max: 64000
+  show_sources:
+    type: boolean
+  rating:
+    type: object

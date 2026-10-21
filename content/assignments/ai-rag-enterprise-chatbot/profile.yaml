@@ -1,0 +1,12 @@
+plugin: cole.rag-chatbot
+version_range: "^1.0"
+config:
+  connection_modes_allowed: [managed]
+  per_case_timeout_seconds: 30
+  startup_timeout_seconds: 60
+  concurrency: 1
+  llm_budget_per_run_usd: 0.50
+  max_answer_chars: 16000
+  show_sources: true
+  rating:
+    criteria: [overall]

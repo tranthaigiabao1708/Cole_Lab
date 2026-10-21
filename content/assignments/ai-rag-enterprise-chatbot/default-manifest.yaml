@@ -1,0 +1,4 @@
+mode: http_service
+artifacts:
+  entry: app.main:app
+  report: REPORT.md

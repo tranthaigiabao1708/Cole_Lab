@@ -1,0 +1,14 @@
+slug: ai-rag-enterprise-chatbot
+title: "Trợ lý RAG tra cứu quy chế và chính sách doanh nghiệp"
+course: ai-engineer-2026
+lesson: {module_code: M5, session: 49}
+assignment_type: ai.rag-chatbot
+plugin: {id: cole.rag-chatbot, version: "^1.0"}
+run_command: "uvicorn app.main:app --port 8000"
+readme: README.md
+template: template
+dataset: dataset
+testset: testset
+visibility: {input: visible, expected: after_run, notes: visible}
+rubric: []
+limits: {timeout_s: 300}
