@@ -1,0 +1,5 @@
+mode: python_impl
+artifacts:
+  entry:
+    entry: solution.predict:predict
+    path: solution/predict.py

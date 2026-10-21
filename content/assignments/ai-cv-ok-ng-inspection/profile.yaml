@@ -1,0 +1,14 @@
+decision_threshold: 0.5
+warmup_cases: 2
+business_costs:
+  false_negative:
+    label: "Lọt hàng lỗi (FN)"
+    unit_cost: 500000
+    currency: "VND"
+  false_positive:
+    label: "Loại nhầm hàng tốt (FP)"
+    unit_cost: 40000
+    currency: "VND"
+pass_criteria:
+  recall_min: 0.85
+  precision_min: 0.85

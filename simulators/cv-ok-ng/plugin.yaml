@@ -1,0 +1,26 @@
+id: cole.cv-ok-ng
+version: 1.0.0
+contract: simulator.v1
+name: Phân loại linh kiện OK/NG sản xuất
+description: Đánh giá mô hình Computer Vision phân loại linh kiện cơ khí OK hoặc NG (khuyết tật), tính toán ma trận nhầm lẫn và chi phí thiệt hại doanh nghiệp do lọt lỗi.
+image: cole/sim-cv-ok-ng:1.0.0
+renderer: cv-grid@1
+modes: [describe, validate-profile, validate-submission, run]
+subject:
+  kind: python_entrypoint
+  artifact: entry
+  input_kind: json
+needs_llm: false
+profile_schema:
+  decision_threshold:
+    type: number
+    min: 0.0
+    max: 1.0
+  warmup_cases:
+    type: integer
+    min: 0
+    max: 50
+  business_costs:
+    type: object
+  pass_criteria:
+    type: object

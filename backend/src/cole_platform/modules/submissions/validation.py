@@ -114,11 +114,18 @@ def validate(contract: dict, manifest: dict, root: Path, expected_assignment: st
 
     mode = manifest.get("mode")
     if modes:
-        if mode not in modes:
-            errors.append(_err("MODE_INVALID", mode=mode or "—"))
-            required = set()
+        if isinstance(modes, list):
+            if mode not in modes:
+                errors.append(_err("MODE_INVALID", mode=mode or "—"))
+            required = {k for k, a in arts.items() if a.get("required")}
+        elif isinstance(modes, dict):
+            if mode not in modes:
+                errors.append(_err("MODE_INVALID", mode=mode or "—"))
+                required = set()
+            else:
+                required = set(modes[mode].get("requires") or [])
         else:
-            required = set(modes[mode].get("requires") or [])
+            required = {k for k, a in arts.items() if a.get("required")}
     else:
         required = {k for k, a in arts.items() if a.get("required")}
     allowed = set(arts)

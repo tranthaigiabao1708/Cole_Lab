@@ -16,6 +16,8 @@ Tài liệu này ghi lại **trung thực** những điểm mà mã nguồn POC 
 | D10 | 3 | Hàng đợi tác vụ (doc 02, doc 08) | Queue chạy qua DB-polling loop trong `main_worker.py` (SELECT queued → claim → execute → UPDATE) | Giảm thiểu phụ thuộc hạ tầng ngoài (Redis/Valkey/RabbitMQ) cho môi trường POC local | Chuyển sang Arq/Valkey khi scale nhiều worker |
 | D11 | 3 | Giao vận container chấm bài | Simulator container và Subject container giao tiếp qua mạng nội bộ Docker không Internet (`network_mode=none`), trao đổi dữ liệu qua thư mục exchange `var/exchange/<run_id>` | Bảo mật tuyệt đối, ngăn rò rỉ đề/kết quả bài thi | Giữ nguyên kiến trúc chuẩn |
 | D12 | 3 | Quản lý container runtime | Runner agent trên Windows kết nối Docker daemon qua named pipe nội bộ của Docker Desktop | Tránh mở cổng TCP Docker không an toàn trên host | Trên Linux server production dùng unix socket `/var/run/docker.sock` |
+| D13 | 4 | Simulator CV OK/NG | Evaluator tính toán ma trận nhầm lẫn 2x2 (TN/FP/FN/TP) và quy đổi rủi ro tài chính trực tiếp: `total_cost = fn * 500.000 + fp * 40.000` VNĐ | Đảm bảo tính ứng dụng doanh nghiệp thực tế theo đề bài đào tạo | Giữ nguyên cho mọi simulator sản xuất |
+| D14 | 4 | Frontend Renderer `cv-grid@1` | Banner rủi ro tài chính nổi bật, ma trận nhầm lẫn tương tác lọc test case khi click | Nâng cao trải nghiệm học viên khi phân tích kết quả mô hình | Chuẩn hóa vào Design System cho các bài toán phân loại |
 
 ## Kiểm chứng bảo mật đã chạy (Phase 2)
 

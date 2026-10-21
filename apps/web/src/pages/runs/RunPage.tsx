@@ -14,6 +14,7 @@ export function RunPage() {
   const [cancelling, setCancelling] = useState(false)
   const [activeTab, setActiveTab] = useState<'results' | 'metrics' | 'logs'>('results')
   const [expandedCase, setExpandedCase] = useState<string | null>(null)
+  const [filterClass, setFilterClass] = useState<'ALL' | 'TP' | 'FN' | 'FP' | 'TN'>('ALL')
 
   async function fetchRun() {
     if (!runId) return
@@ -81,7 +82,21 @@ export function RunPage() {
   const cases = data?.cases ?? []
   const passedCount = data?.summary?.passed_cases ?? cases.filter((c) => c.status === 'passed').length
   const totalCount = data?.summary?.total_cases ?? cases.length
-  const metrics = data?.summary?.metrics ?? {}
+  const metrics = (data?.summary?.metrics ?? {}) as Record<string, unknown>
+
+  const isCv = data?.plugin?.renderer === 'cv-grid@1' || metrics.business_cost_vnd !== undefined
+  const businessCost = typeof metrics.business_cost_vnd === 'number' ? metrics.business_cost_vnd : null
+  const tp = Number(metrics.true_positives ?? 0)
+  const fn = Number(metrics.false_negatives ?? 0)
+  const fp = Number(metrics.false_positives ?? 0)
+  const tn = Number(metrics.true_negatives ?? 0)
+
+  const displayedCases = cases.filter((c) => {
+    if (filterClass === 'ALL') return true
+    const cls = (c.output as { classification?: string })?.classification ??
+      (c.detail as { classification?: string })?.classification
+    return cls === filterClass
+  })
 
   return (
     <div className="page">
@@ -130,6 +145,35 @@ export function RunPage() {
             </div>
           )}
 
+          {/* Business Cost Banner for CV OK/NG */}
+          {isCv && businessCost !== null && (
+            <div
+              className="panel"
+              style={{
+                marginBottom: 'var(--space-6)',
+                borderColor: fn > 0 ? 'var(--signal-critical, #ef4444)' : 'var(--signal-pass, #22c55e)',
+                backgroundColor: 'rgba(239, 68, 68, 0.05)',
+              }}
+            >
+              <div className="panel__body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
+                <div>
+                  <span className="sheet-code" style={{ color: 'var(--signal-critical)' }}>RỦI RO TÀI CHÍNH DOANH NGHIỆP</span>
+                  <h2 style={{ margin: '4px 0', fontSize: 'var(--fs-2xl)', color: fn > 0 ? 'var(--signal-critical)' : 'inherit' }}>
+                    {vi.cv.businessCostSub(businessCost.toLocaleString('vi-VN'))}
+                  </h2>
+                  <div style={{ display: 'flex', gap: 'var(--space-6)', marginTop: 'var(--space-2)', fontSize: '0.9em', color: 'var(--ink-muted)' }}>
+                    <span>{vi.cv.fnCostDesc(fn, (fn * 500000).toLocaleString('vi-VN'))}</span>
+                    <span>{vi.cv.fpCostDesc(fp, (fp * 40000).toLocaleString('vi-VN'))}</span>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span className="annot">Định mức tổn thất</span>
+                  <div className="mono" style={{ fontSize: '0.85em' }}>Lọt lỗi: 500.000 đ · Loại nhầm: 40.000 đ</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="stats-row" style={{ marginBottom: 'var(--space-6)' }}>
             <Metric
               id="metric-run-status"
@@ -138,7 +182,7 @@ export function RunPage() {
             />
             <Metric
               id="metric-run-score"
-              value={data.score !== null ? `${Math.round(data.score * 100)}%` : vi.common.none}
+              value={data.score !== null ? `${Math.round(data.score * 100)}%` : (metrics.accuracy !== undefined ? `${Math.round(Number(metrics.accuracy) * 100)}%` : vi.common.none)}
               label={vi.run.score}
             />
             <Metric
@@ -146,7 +190,98 @@ export function RunPage() {
               value={`${passedCount} / ${totalCount}`}
               label={vi.run.passedCases}
             />
+            {isCv && metrics.recall !== undefined && (
+              <Metric
+                id="metric-run-recall"
+                value={`${Math.round(Number(metrics.recall) * 100)}%`}
+                label="Recall (NG)"
+              />
+            )}
+            {isCv && metrics.precision !== undefined && (
+              <Metric
+                id="metric-run-precision"
+                value={`${Math.round(Number(metrics.precision) * 100)}%`}
+                label="Precision (NG)"
+              />
+            )}
           </div>
+
+          {/* Interactive Confusion Matrix for CV OK/NG */}
+          {isCv && (
+            <div className="panel" style={{ marginBottom: 'var(--space-6)' }}>
+              <div className="panel__header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 className="panel__title">{vi.cv.matrixTitle}</h3>
+                {filterClass !== 'ALL' && (
+                  <button className="btn btn--sm btn--ghost" onClick={() => setFilterClass('ALL')}>
+                    {vi.cv.filterAll}
+                  </button>
+                )}
+              </div>
+              <div className="panel__body">
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr', gap: 'var(--space-3)', alignItems: 'center', textAlign: 'center' }}>
+                  <div />
+                  <div className="annot mono">{vi.cv.predOk}</div>
+                  <div className="annot mono">{vi.cv.predNg}</div>
+
+                  <div className="annot mono" style={{ textAlign: 'right' }}>{vi.cv.actualOk}</div>
+                  <div
+                    onClick={() => setFilterClass(filterClass === 'TN' ? 'ALL' : 'TN')}
+                    style={{
+                      padding: 'var(--space-4)',
+                      cursor: 'pointer',
+                      border: `1px solid ${filterClass === 'TN' ? 'var(--signal-pass)' : 'var(--border-subtle)'}`,
+                      backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'bold' }}>{tn}</div>
+                    <span className="annot">{vi.cv.tnLabel}</span>
+                  </div>
+                  <div
+                    onClick={() => setFilterClass(filterClass === 'FP' ? 'ALL' : 'FP')}
+                    style={{
+                      padding: 'var(--space-4)',
+                      cursor: 'pointer',
+                      border: `1px solid ${filterClass === 'FP' ? 'var(--signal-warn)' : 'var(--border-subtle)'}`,
+                      backgroundColor: 'rgba(234, 179, 8, 0.08)',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'bold', color: 'var(--signal-warn, #eab308)' }}>{fp}</div>
+                    <span className="annot">{vi.cv.fpLabel}</span>
+                  </div>
+
+                  <div className="annot mono" style={{ textAlign: 'right' }}>{vi.cv.actualNg}</div>
+                  <div
+                    onClick={() => setFilterClass(filterClass === 'FN' ? 'ALL' : 'FN')}
+                    style={{
+                      padding: 'var(--space-4)',
+                      cursor: 'pointer',
+                      border: `2px solid ${filterClass === 'FN' ? 'var(--signal-critical)' : 'rgba(239, 68, 68, 0.5)'}`,
+                      backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'bold', color: 'var(--signal-critical, #ef4444)' }}>{fn}</div>
+                    <span className="annot" style={{ color: 'var(--signal-critical, #ef4444)' }}>{vi.cv.fnLabel}</span>
+                  </div>
+                  <div
+                    onClick={() => setFilterClass(filterClass === 'TP' ? 'ALL' : 'TP')}
+                    style={{
+                      padding: 'var(--space-4)',
+                      cursor: 'pointer',
+                      border: `1px solid ${filterClass === 'TP' ? 'var(--signal-pass)' : 'var(--border-subtle)'}`,
+                      backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'bold' }}>{tp}</div>
+                    <span className="annot">{vi.cv.tpLabel}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="sub-tabs" style={{ marginBottom: 'var(--space-6)' }}>
             <button
@@ -154,7 +289,7 @@ export function RunPage() {
               onClick={() => setActiveTab('results')}
               id="tab-results"
             >
-              {vi.run.tabResults} ({cases.length})
+              {vi.run.tabResults} ({displayedCases.length})
             </button>
             <button
               className={`sub-tab ${activeTab === 'metrics' ? 'active' : ''}`}
@@ -175,8 +310,8 @@ export function RunPage() {
           {activeTab === 'results' && (
             <div className="panel">
               <div className="panel__body">
-                {cases.length === 0 ? (
-                  <p className="muted">Chưa có kết quả trường hợp kiểm thử nào.</p>
+                {displayedCases.length === 0 ? (
+                  <p className="muted">Không có kết quả nào phù hợp với bộ lọc.</p>
                 ) : (
                   <div className="table-wrap">
                     <table className="table">
@@ -190,7 +325,7 @@ export function RunPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {cases.map((t) => {
+                        {displayedCases.map((t) => {
                           const isExpanded = expandedCase === t.id
                           return (
                             <Fragment key={t.id}>
@@ -263,7 +398,7 @@ export function RunPage() {
                     {Object.entries(metrics).map(([k, v]) => (
                       <Metric
                         key={k}
-                        value={typeof v === 'number' ? v.toFixed(4) : String(v)}
+                        value={typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : String(v)}
                         label={k}
                       />
                     ))}
@@ -314,6 +449,12 @@ export function RunPage() {
                   </pre>
                 </div>
               </div>
+            </div>
+          )}
+
+          {isCv && (
+            <div className="status-block" style={{ marginTop: 'var(--space-6)' }}>
+              <div className="status-block__body">{vi.cv.environmentNotice}</div>
             </div>
           )}
         </>

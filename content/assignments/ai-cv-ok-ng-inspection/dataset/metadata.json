@@ -1,0 +1,11 @@
+{
+  "dataset_name": "industrial_components_ok_ng_sample",
+  "version": "1.0.0",
+  "samples": [
+    {"id": "d001", "surface": "smooth", "variance": 0.015, "max_gradient": 11, "label": "OK"},
+    {"id": "d002", "surface": "scratch", "variance": 0.35, "max_gradient": 75, "label": "NG"},
+    {"id": "d003", "surface": "smooth", "variance": 0.022, "max_gradient": 14, "label": "OK"},
+    {"id": "d004", "surface": "dent", "variance": 0.27, "max_gradient": 60, "label": "NG"},
+    {"id": "d005", "surface": "crack", "variance": 0.44, "max_gradient": 115, "label": "NG"}
+  ]
+}

@@ -24,6 +24,14 @@
   color: var(--graphite-500);
 }
 
+.stats-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
 .metric {
   display: flex;
   flex-direction: column;

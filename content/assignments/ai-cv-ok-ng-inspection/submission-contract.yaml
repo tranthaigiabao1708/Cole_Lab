@@ -1,0 +1,14 @@
+contract: submission/v1
+plugin: cole.cv-ok-ng
+artifacts:
+  entry:
+    required: true
+    kind: python_entrypoint
+    signature: "predict(input_data: dict) -> dict"
+    label: Hàm dự đoán OK/NG
+  report:
+    required: false
+    kind: file
+    accepted_formats: [md]
+    max_size_mb: 2
+    label: Báo cáo kỹ thuật
