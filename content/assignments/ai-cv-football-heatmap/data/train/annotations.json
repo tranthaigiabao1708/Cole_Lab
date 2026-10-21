@@ -1,0 +1,187 @@
+{
+  "dataset_name": "bundesliga_tactical_train_v1",
+  "description": "Ảnh trích xuất từ camera chiến thuật phục vụ huấn luyện nhận diện cầu thủ và bóng",
+  "total_images": 15,
+  "annotations": [
+    {
+      "image": "train_frame_000.jpg",
+      "frame_idx": 37,
+      "timestamp_s": 1.48,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_001.jpg",
+      "frame_idx": 75,
+      "timestamp_s": 3.0,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_002.jpg",
+      "frame_idx": 112,
+      "timestamp_s": 4.48,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_003.jpg",
+      "frame_idx": 150,
+      "timestamp_s": 6.0,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_004.jpg",
+      "frame_idx": 187,
+      "timestamp_s": 7.48,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_005.jpg",
+      "frame_idx": 225,
+      "timestamp_s": 9.0,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_006.jpg",
+      "frame_idx": 262,
+      "timestamp_s": 10.48,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_007.jpg",
+      "frame_idx": 300,
+      "timestamp_s": 12.0,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_008.jpg",
+      "frame_idx": 337,
+      "timestamp_s": 13.48,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_009.jpg",
+      "frame_idx": 375,
+      "timestamp_s": 15.0,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_010.jpg",
+      "frame_idx": 412,
+      "timestamp_s": 16.48,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_011.jpg",
+      "frame_idx": 450,
+      "timestamp_s": 18.0,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_012.jpg",
+      "frame_idx": 487,
+      "timestamp_s": 19.48,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_013.jpg",
+      "frame_idx": 525,
+      "timestamp_s": 21.0,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    },
+    {
+      "image": "train_frame_014.jpg",
+      "frame_idx": 562,
+      "timestamp_s": 22.48,
+      "width": 1920,
+      "height": 1080,
+      "classes": [
+        "player",
+        "referee",
+        "ball"
+      ]
+    }
+  ]
+}

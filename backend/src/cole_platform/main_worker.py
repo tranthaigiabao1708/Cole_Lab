@@ -8,9 +8,9 @@ from sqlalchemy import select
 
 from cole_platform import models_registry  # noqa: F401
 from cole_platform.kernel.config import settings
-from cole_platform.kernel.db import SessionLocal
+from cole_platform.kernel.db import SessionLocal, init_db
 from cole_platform.modules.runs.models import Run
-from cole_platform.modules.runs.service import execute_run
+from cole_platform.modules.runs.service import execute_run, recover_stale_runs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("cole.worker")
@@ -52,10 +52,23 @@ def poll_and_run_once() -> bool:
     return True
 
 
+def recover_once() -> list[str]:
+    with SessionLocal() as db:
+        ids = recover_stale_runs(db)
+    if ids:
+        log.warning("Recovered %d stale run(s) as WORKER_LOST: %s", len(ids), ", ".join(ids))
+    return ids
+
+
 def run_loop():
+    init_db()
     log.info("COLE worker started. Polling every %.1fs", settings.worker_poll_s)
+    last_scan = float("-inf")
     while not _stop:
         try:
+            if time.monotonic() - last_scan >= settings.stale_scan_interval_s:
+                last_scan = time.monotonic()
+                recover_once()
             had_work = poll_and_run_once()
             if not had_work:
                 time.sleep(settings.worker_poll_s)

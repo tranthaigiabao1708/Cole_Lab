@@ -52,3 +52,25 @@ def init_db() -> None:
     from cole_platform import models_registry  # noqa: F401  (registers all models)
 
     Base.metadata.create_all(engine)
+    if engine.url.get_backend_name() == "sqlite":
+        _sqlite_add_missing_columns()
+
+
+def _sqlite_add_missing_columns() -> None:
+    """Additive-only schema sync for local SQLite DBs: ADD COLUMN for new nullable columns.
+
+    Never drops or alters columns. Non-nullable additions still require a reset (`seed --reset`).
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing or not col.nullable:
+                    continue
+                ddl_type = col.type.compile(dialect=engine.dialect)
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl_type}'))

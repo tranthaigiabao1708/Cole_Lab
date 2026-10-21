@@ -38,8 +38,14 @@ def assignment_ref(a, av) -> str:
 def normalize_manifest(a, av, manifest: dict) -> dict:
     m = {"manifest": "submission/v1", "assignment": assignment_ref(a, av)}
     m["mode"] = manifest.get("mode")
-    m["artifacts"] = {k: {kk: vv for kk, vv in (v or {}).items() if kk in ("path", "entry", "command") and vv}
-                      for k, v in (manifest.get("artifacts") or {}).items()}
+    def _norm_art(v):
+        if isinstance(v, dict):
+            return {kk: vv for kk, vv in v.items() if kk in ("path", "entry", "command") and vv}
+        if isinstance(v, str):
+            v = v.strip()
+            return {"entry": v} if ":" in v else {"path": v}
+        return {}
+    m["artifacts"] = {k: _norm_art(v) for k, v in (manifest.get("artifacts") or {}).items()}
     return m
 
 

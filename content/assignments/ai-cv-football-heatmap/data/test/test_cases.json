@@ -1,0 +1,47 @@
+{
+  "dataset_name": "bundesliga_tactical_test_v1",
+  "description": "Ảnh kiểm thử độc lập đánh giá độ chính xác mAP và F1 của mô hình",
+  "total_images": 5,
+  "test_cases": [
+    {
+      "image": "test_frame_000.jpg",
+      "frame_idx": 56,
+      "timestamp_s": 2.24,
+      "width": 1920,
+      "height": 1080,
+      "expected_players_count": 18
+    },
+    {
+      "image": "test_frame_001.jpg",
+      "frame_idx": 93,
+      "timestamp_s": 3.72,
+      "width": 1920,
+      "height": 1080,
+      "expected_players_count": 19
+    },
+    {
+      "image": "test_frame_002.jpg",
+      "frame_idx": 131,
+      "timestamp_s": 5.24,
+      "width": 1920,
+      "height": 1080,
+      "expected_players_count": 20
+    },
+    {
+      "image": "test_frame_003.jpg",
+      "frame_idx": 168,
+      "timestamp_s": 6.72,
+      "width": 1920,
+      "height": 1080,
+      "expected_players_count": 21
+    },
+    {
+      "image": "test_frame_004.jpg",
+      "frame_idx": 206,
+      "timestamp_s": 8.24,
+      "width": 1920,
+      "height": 1080,
+      "expected_players_count": 18
+    }
+  ]
+}

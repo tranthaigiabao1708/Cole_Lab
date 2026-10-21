@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     llm_upstream_for_containers: str = "http://host.docker.internal:8000/api/llm"
 
     worker_poll_s: float = 1.0
+    # Seconds beyond a run's own timeout before the worker declares it lost (chaos: worker crash mid-run).
+    stale_run_grace_s: int = 180
+    stale_scan_interval_s: float = 30.0
+
+    # Unit prices for cost/run (docs/design/13 §2). 0 = not configured; no price is assumed until Q-02/Q-03 are settled.
+    price_vcpu_hour_usd: float = 0.0
+    price_gb_ram_hour_usd: float = 0.0
 
     @property
     def db_url(self) -> str:

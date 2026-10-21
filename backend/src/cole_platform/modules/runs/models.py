@@ -28,6 +28,8 @@ class Run(TimestampMixin, Base):
     validation_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     runner_info: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Cost record (docs/design/13 §2): duration, cpu, memory, LLM tokens/cost, output bytes. Filled when the run ends.
+    cost: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

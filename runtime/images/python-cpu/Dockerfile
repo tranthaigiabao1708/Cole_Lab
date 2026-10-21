@@ -29,6 +29,7 @@ RUN groupadd -g 1000 learner \
  && chown learner:learner /workspace
 
 COPY harness.py /opt/cole/harness.py
+COPY llmproxy.py /opt/cole/llmproxy.py
 COPY bashrc /home/learner/.bashrc
 
 USER 1000:1000

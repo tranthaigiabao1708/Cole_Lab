@@ -1,0 +1,6 @@
+{"key": "frame_000", "input": {"image_path": "data/test/test_frame_000.jpg", "frame_idx": 37}, "expected": {"players_count": 18}, "tags": ["image", "frame_37"]}
+{"key": "frame_001", "input": {"image_path": "data/test/test_frame_001.jpg", "frame_idx": 75}, "expected": {"players_count": 19}, "tags": ["image", "frame_75"]}
+{"key": "frame_002", "input": {"image_path": "data/test/test_frame_002.jpg", "frame_idx": 112}, "expected": {"players_count": 20}, "tags": ["image", "frame_112"]}
+{"key": "frame_003", "input": {"image_path": "data/test/test_frame_003.jpg", "frame_idx": 150}, "expected": {"players_count": 18}, "tags": ["image", "frame_150"]}
+{"key": "frame_004", "input": {"image_path": "data/test/test_frame_004.jpg", "frame_idx": 187}, "expected": {"players_count": 19}, "tags": ["image", "frame_187"]}
+{"key": "video_clip_full", "input": {"video_path": "data/test_videos/bundesliga_match_clip.mp4"}, "expected": {"heatmap_correlation_min": 0.75, "min_fps": 15}, "tags": ["video", "heatmap"]}

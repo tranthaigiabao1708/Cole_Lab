@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "docker-control": {
+      "command": "node",
+      "args": [
+        "d:\\AI.E\\Cole_Lab\\.agents\\mcp\\docker\\server.mjs"
+      ]
+    },
+    "docker-gateway": {
+      "command": "C:\\Users\\giaba\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+      "args": [
+        "mcp",
+        "gateway",
+        "run"
+      ]
+    }
+  }
+}

@@ -50,3 +50,4 @@ cole_lab/
 Không có code, không có cấu hình build, không có git history. Không file hiện có nào bị sửa hoặc di chuyển.
 
 - [17. Nhật ký sai lệch khi triển khai POC](17-implementation-deviations.md)
+- [18. Trạng thái nghiệm thu POC (Phase 6)](18-poc-acceptance-status.md)

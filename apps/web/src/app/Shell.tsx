@@ -1,4 +1,4 @@
-﻿import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../core/auth'
 import { vi } from '../core/copy/vi'
 import { Icon } from '../core/design-system/icons'
@@ -37,6 +37,9 @@ export function Shell() {
               <NavLink to="/teach/import" className={link} id="nav-teach-import">
                 {vi.nav.teachImport}
               </NavLink>
+              <NavLink to="/teach/simulators" className={link} id="nav-teach-simulators">
+                {vi.nav.teachSimulators}
+              </NavLink>
             </>
           )}
           {isAdmin && (
@@ -50,6 +53,9 @@ export function Shell() {
               </NavLink>
               <NavLink to="/admin/runtime" className={link} id="nav-admin-runtime">
                 {vi.nav.adminRuntime}
+              </NavLink>
+              <NavLink to="/admin/costs" className={link} id="nav-admin-costs">
+                {vi.nav.adminCosts}
               </NavLink>
               <NavLink to="/admin/audit" className={link} id="nav-admin-audit">
                 {vi.nav.adminAudit}

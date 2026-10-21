@@ -1,6 +1,7 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, type AssignmentSummary, type CourseDetail, type Lesson, type Module } from '../../core/api'
+import { useAuth } from '../../core/auth'
 import { vi } from '../../core/copy/vi'
 import {
   ErrorNote,
@@ -32,11 +33,15 @@ function LessonRow({
   m,
   l,
   assignments,
+  courseId,
+  isTeacher,
 }: {
   t: TrackConfig
   m: Module
   l: Lesson
   assignments: AssignmentSummary[]
+  courseId: string
+  isTeacher: boolean
 }) {
   const hasMore = Boolean(l.content || l.objectives || l.practice)
   return (
@@ -77,24 +82,40 @@ function LessonRow({
         )}
       </div>
       <div className="lesson__aside">
-        {t.executionEnabled
-          ? assignments.map((a) => (
-              <Link key={a.id} className="go" to={`/assignments/${a.id}`} id={`lesson-asg-${a.slug}`}>
-                {vi.course.practiceLink}: {a.title} <Icon name="arrowRight" size={14} />
-              </Link>
-            ))
-          : l.practice_candidate && <span className="lesson__planned">{vi.status.practicePlanned}</span>}
+        {assignments.map((a) => (
+          <div key={a.id} style={{ marginBottom: isTeacher ? '6px' : '0' }}>
+            <Link className="go" to={`/assignments/${a.id}`} id={`lesson-asg-${a.slug}`}>
+              {vi.course.practiceLink}: {a.title} <Icon name="arrowRight" size={14} />
+            </Link>
+          </div>
+        ))}
+        {isTeacher && (
+          <Link
+            to={`/teach/assignments/new?courseId=${courseId}&lessonId=${l.id}&track=${t.code}`}
+            className="btn btn--sm btn--ember"
+            id={`create-lab-lesson-${l.id}`}
+            title="Tạo đề bài lab mới cho buổi học này"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Icon name="plus" size={12} />
+            <span>{vi.course.createLab}</span>
+          </Link>
+        )}
+        {!isTeacher && !assignments.length && l.practice_candidate && (
+          <span className="lesson__planned">{vi.status.practicePlanned}</span>
+        )}
       </div>
     </div>
   )
 }
 
 export function CourseDetailPage() {
+  const { user } = useAuth()
   const { courseId } = useParams()
   const loc = useLocation()
   const { data, error, loading, reload } = useAsync(() => api.get<CourseDetail>(`/courses/${courseId}`), [courseId])
   const [active, setActive] = useState<string | null>(null)
-  usePageMeta(data ? `${data.title} — COLE LAB` : vi.meta.coursesTitle, data ? `Đề cương ${data.title}` : undefined)
+  usePageMeta(data ? `${data.title} — COLE LAB` : vi.meta.coursesTitle, data ? `Khung chương trình ${data.title}` : undefined)
 
   useEffect(() => {
     if (!data) return
@@ -118,6 +139,7 @@ export function CourseDetailPage() {
   if (error || !data) return <div className="page"><ErrorNote error={error} onRetry={reload} id="course-error" /></div>
 
   const t = trackOf(data.track)
+  const isTeacher = user?.role === 'teacher' || user?.role === 'admin' || data.role === 'teacher' || data.role === 'admin'
   const byLesson = new Map<string, AssignmentSummary[]>()
   data.assignments.forEach((a) => {
     if (a.lesson_id) byLesson.set(a.lesson_id, [...(byLesson.get(a.lesson_id) ?? []), a])
@@ -194,7 +216,15 @@ export function CourseDetailPage() {
                 </div>
               )}
               {m.lessons.map((l) => (
-                <LessonRow key={l.id} t={t} m={m} l={l} assignments={byLesson.get(l.id) ?? []} />
+                <LessonRow
+                  key={l.id}
+                  t={t}
+                  m={m}
+                  l={l}
+                  assignments={byLesson.get(l.id) ?? []}
+                  courseId={data.id}
+                  isTeacher={isTeacher}
+                />
               ))}
             </section>
           ))}

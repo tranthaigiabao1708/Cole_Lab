@@ -49,6 +49,9 @@ def _start_subject(run_id: str, spec: dict, net_name: str, ex: Path, ttl: int):
         env.update(PORT="8080")
     else:
         raise ValueError(f"unknown subject kind {subj['kind']}")
+    if spec.get("llm"):
+        # Forwarder alias inside the run network; the real virtual key stays in the proxy container.
+        env.update(COLE_LLM_URL="http://llm:8081/v1", OPENAI_BASE_URL="http://llm:8081/v1", OPENAI_API_KEY="cole-run-proxy")
     env.update(subj.get("env") or {})
     c = client()
     cont = c.containers.create(
@@ -97,6 +100,32 @@ def _start_llm_proxy(run_id: str, spec: dict, net_name: str, ttl: int):
     return cont
 
 
+def _sample(cont, acc: dict) -> None:
+    """Best-effort cgroup sample; keeps the latest CPU total and the peak memory per container."""
+    if cont is None:
+        return
+    try:
+        s = cont.stats(stream=False)
+    except Exception:  # noqa: BLE001 — container already gone / engine busy
+        return
+    cpu_ns = ((s.get("cpu_stats") or {}).get("cpu_usage") or {}).get("total_usage") or 0
+    mem = s.get("memory_stats") or {}
+    used = (mem.get("usage") or 0) - ((mem.get("stats") or {}).get("inactive_file") or 0)
+    rec = acc.setdefault(cont.id, {"cpu_ns": 0, "peak_mem": 0})
+    rec["cpu_ns"] = max(rec["cpu_ns"], int(cpu_ns))
+    rec["peak_mem"] = max(rec["peak_mem"], int(used))
+
+
+def _resources(acc: dict) -> dict:
+    return {
+        "cpu_seconds": round(sum(r["cpu_ns"] for r in acc.values()) / 1e9, 3),
+        "peak_mem_mb": round(max((r["peak_mem"] for r in acc.values()), default=0) / (1024 * 1024), 1),
+        "cpu_limit": settings.run_cpus,
+        "containers": len(acc),
+        "method": "docker-stats-sampled",
+    }
+
+
 def execute(run_id: str, spec: dict) -> dict:
     """Blocking. Returns exit status; evaluator writes results into exchange/<run>/output."""
     c = client()
@@ -111,6 +140,7 @@ def execute(run_id: str, spec: dict) -> dict:
     net_name = f"cole-run-{run_id}"
     started = time.time()
     subject = proxy = evaluator = None
+    acc: dict = {}
     result: dict = {"isolation": iso.__dict__, "timed_out": False, "cancelled": False}
     try:
         try:
@@ -156,6 +186,8 @@ def execute(run_id: str, spec: dict) -> dict:
             if time.time() > deadline:
                 result["timed_out"] = True
                 break
+            _sample(evaluator, acc)
+            _sample(subject, acc)
             try:
                 r = evaluator.wait(timeout=2)
                 exit_code = r.get("StatusCode")
@@ -172,6 +204,7 @@ def execute(run_id: str, spec: dict) -> dict:
         _cleanup(run_id, net_name)
         _cancelled.discard(run_id)
         result["duration_ms"] = int((time.time() - started) * 1000)
+        result["resources"] = _resources(acc)
         (out_dir / "runner.json").write_text(json.dumps(result), encoding="utf-8")
     return result
 

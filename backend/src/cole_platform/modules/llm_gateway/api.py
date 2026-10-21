@@ -27,14 +27,11 @@ def chat_completions(
         raise HTTPException(status_code=401, detail={"code": "MISSING_KEY", "message": "Yêu cầu Bearer token."})
 
     raw_key = authorization.removeprefix("Bearer ").strip()
-    try:
-        return service.handle_chat_completion(
-            db=db,
-            raw_key=raw_key,
-            model=req.model,
-            messages=req.messages,
-            temperature=req.temperature,
-            max_tokens=req.max_tokens,
-        )
-    except AppError as e:
-        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message})
+    return service.handle_chat_completion(
+        db=db,
+        raw_key=raw_key,
+        model=req.model,
+        messages=req.messages,
+        temperature=req.temperature,
+        max_tokens=req.max_tokens,
+    )

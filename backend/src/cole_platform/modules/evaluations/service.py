@@ -17,7 +17,7 @@ def save_evaluation(
     criteria: dict[str, Any] | None = None,
 ) -> Evaluation:
     if rating < 1 or rating > 5:
-        raise AppError("INVALID_RATING", "Đánh giá sao phải từ 1 đến 5.", status_code=400)
+        raise AppError(400, "INVALID_RATING", "Đánh giá sao phải từ 1 đến 5.")
 
     stmt = select(Evaluation).where(
         Evaluation.run_id == run_id,

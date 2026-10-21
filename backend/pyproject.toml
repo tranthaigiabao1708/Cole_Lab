@@ -20,7 +20,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# runtime/runner (the only process that talks to the container engine) + test_runner_security.py
+runner = ["docker>=7"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "../sdk/python"]
 testpaths = ["tests"]

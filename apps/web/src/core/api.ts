@@ -147,6 +147,31 @@ export interface SimulatorPluginOut {
   versions: PluginVersionOut[]
 }
 
+export interface DatasetConfig {
+  train_images_dir?: string
+  test_images_dir?: string
+  test_videos_dir?: string
+}
+
+export interface TeachSimulator {
+  id: string
+  name: string
+  description: string
+  track?: string
+  category: string
+  category_name: string
+  entry_path?: string
+  dataset_config?: DatasetConfig
+  mode: string
+  image: string
+  version: string
+  status: string
+  run_command: string
+  default_code: string
+  default_readme: string
+  versions_count: number
+}
+
 export interface TestCaseResultOut {
   id: string
   case_key: string
@@ -163,7 +188,7 @@ export interface TestCaseResultOut {
 
 export interface RunDetailOut {
   id: string
-  submission_id: string
+  submission_id: string | null
   assignment?: { id: string; slug: string; title: string } | null
   plugin?: { id: string; version: string; renderer: string } | null
   mode: string
@@ -180,6 +205,7 @@ export interface RunDetailOut {
   validation_report?: unknown
   error?: { code?: string; message_vi?: string } | null
   runner_info?: unknown
+  cost?: RunCost | null
   columns?: Array<{ key: string; label: string }> | null
   cases: TestCaseResultOut[]
   events?: unknown[]
@@ -187,6 +213,42 @@ export interface RunDetailOut {
   created_at: string
   started_at: string | null
   finished_at: string | null
+}
+
+/** Per-run cost record (docs/design/13 §2, AC-17). Null fields = not measured in this environment. */
+export interface RunCost {
+  duration_ms: number | null
+  cpu_seconds: number | null
+  reserved_vcpu_seconds: number | null
+  peak_mem_mb: number | null
+  llm_requests: number
+  llm_tokens_in: number
+  llm_tokens_out: number
+  llm_cost_usd: number
+  output_bytes: number
+  compute_cost_usd: number | null
+  total_cost_usd: number
+  pricing_configured: boolean
+}
+
+export interface CostSummaryItem {
+  assignment_id: string
+  slug: string | null
+  title: string | null
+  runs: number
+  runs_with_cost: number
+  avg_duration_ms: number
+  llm_tokens_in: number
+  llm_tokens_out: number
+  llm_cost_usd: number
+  total_cost_usd: number
+  avg_cost_usd: number
+}
+
+export interface CostSummaryOut {
+  items: CostSummaryItem[]
+  totals: { runs: number; runs_with_cost: number; total_cost_usd: number }
+  pricing_configured: boolean
 }
 
 export interface ContainerInfo {

@@ -45,6 +45,8 @@ Cost_run = vCPU_giây_run × P_vcpu_s + GB_RAM_giây × P_ram_s + Token_gateway 
 ```
 Mỗi `Run` lưu `cost` (jsonb): `cpu_seconds`, `peak_mem_mb`, `llm_tokens_in/out`, `output_bytes` — từ cgroup stats của runner và usage của gateway. Tổng hợp theo assignment/khóa học trong dashboard.
 
+**Đã triển khai (Phase 6):** `Run.cost` gồm `duration_ms`, `cpu_seconds` (lấy mẫu, xấp xỉ — xem [17 D17](17-implementation-deviations.md)), `reserved_vcpu_seconds`, `peak_mem_mb`, `llm_requests`, `llm_tokens_in/out`, `llm_cost_usd`, `output_bytes`, `compute_cost_usd`, `total_cost_usd`. Hiển thị ở tab "Chỉ số" của trang kết quả và trang Admin → Chi phí (`GET /api/admin/runs/cost-summary`). Đơn giá cấu hình qua `COLE_PRICE_VCPU_HOUR_USD`, `COLE_PRICE_GB_RAM_HOUR_USD`; mặc định 0 = chưa cấu hình. **Chưa có số đo thực tế**: cần chạy run CV/RAG trên máy có Docker và ghi kết quả vào §3.
+
 ## 3. Kịch bản tài nguyên **[GIẢ ĐỊNH — dùng để sizing, chưa phải báo giá]**
 
 Giả định chung: workspace 1 vCPU/2 GB; run CV ~1 vCPU-phút; run RAG ~3 vCPU-phút + 20 câu × (2.000 in + 300 out) token = **46k token/run**; mỗi học viên 5 run/tuần/bài trong giai đoạn học module; dự phòng RAM 20%; k = 3.

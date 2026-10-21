@@ -10,6 +10,37 @@ from . import service
 router = APIRouter(tags=["plugins"])
 
 
+class CreateSimulatorIn(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    track: str = "AI_ENGINEER"
+    category: str = "custom"
+    entry_path: str = "solution/predict.py"
+    dataset_config: dict | None = None
+    mode: str = "python_impl"
+    image: str = "cole/python-cpu:0.1"
+    run_command: str = "python solution.py"
+    default_code: str = ""
+    default_readme: str = ""
+
+
+@router.get("/teach/simulators")
+def get_teach_simulators(p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    if not p.is_teacher:
+        from cole_platform.kernel.errors import forbidden
+        raise forbidden()
+    return service.list_teach_simulators(db)
+
+
+@router.post("/teach/simulators")
+def post_teach_simulator(body: CreateSimulatorIn, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    if not p.is_teacher:
+        from cole_platform.kernel.errors import forbidden
+        raise forbidden()
+    return service.create_teach_simulator(db, p, body.model_dump())
+
+
 @router.get("/admin/plugins")
 def list_plugins(p: Principal = Depends(current_user), db: Session = Depends(get_db)):
     # Teachers and Admins can view simulators
@@ -17,6 +48,7 @@ def list_plugins(p: Principal = Depends(current_user), db: Session = Depends(get
         from cole_platform.kernel.errors import forbidden
         raise forbidden()
     return service.list_plugins(db)
+
 
 
 @router.post("/admin/plugins/scan")

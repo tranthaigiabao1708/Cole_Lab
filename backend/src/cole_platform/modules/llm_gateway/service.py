@@ -89,10 +89,10 @@ def handle_chat_completion(
 ) -> dict[str, Any]:
     vk = get_key_by_secret(db, raw_key)
     if not vk:
-        raise AppError("INVALID_VIRTUAL_KEY", "Khóa API ảo không tồn tại hoặc đã hết hiệu lực.", status_code=401)
+        raise AppError(401, "INVALID_VIRTUAL_KEY", "Khóa API ảo không tồn tại hoặc đã hết hiệu lực.")
 
     if vk.spent_usd >= vk.budget_usd:
-        raise AppError("LLM_BUDGET_EXCEEDED", f"Đã vượt hạn mức ngân sách LLM ({vk.budget_usd:.2f} USD).", status_code=429)
+        raise AppError(429, "LLM_BUDGET_EXCEEDED", f"Đã vượt hạn mức ngân sách LLM ({vk.budget_usd:.2f} USD).")
 
     provider = os.environ.get("COLE_LLM_PROVIDER", "mock").lower()
 
@@ -148,4 +148,26 @@ def handle_chat_completion(
             },
         }
 
-    raise AppError("PROVIDER_NOT_CONFIGURED", f"LLM provider {provider} chưa được cấu hình.", status_code=500)
+    raise AppError(500, "PROVIDER_NOT_CONFIGURED", f"LLM provider {provider} chưa được cấu hình.")
+
+
+def close_run_keys(db: Session, run_id: str) -> int:
+    """Deactivate every virtual key minted for a run (called when the run ends)."""
+    keys = db.scalars(select(VirtualKey).where(VirtualKey.run_id == run_id, VirtualKey.is_active == True)).all()  # noqa: E712
+    for k in keys:
+        k.is_active = False
+    return len(keys)
+
+
+def usage_for_run(db: Session, run_id: str) -> dict[str, Any]:
+    """Aggregate gateway usage of all keys bound to a run."""
+    key_ids = list(db.scalars(select(VirtualKey.id).where(VirtualKey.run_id == run_id)))
+    if not key_ids:
+        return {"requests": 0, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
+    logs = db.scalars(select(LLMUsageLog).where(LLMUsageLog.virtual_key_id.in_(key_ids))).all()
+    return {
+        "requests": len(logs),
+        "tokens_in": sum(l.prompt_tokens for l in logs),
+        "tokens_out": sum(l.completion_tokens for l in logs),
+        "cost_usd": round(sum(l.cost_usd for l in logs), 6),
+    }

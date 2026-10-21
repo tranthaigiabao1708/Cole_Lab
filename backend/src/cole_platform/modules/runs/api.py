@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from cole_platform.kernel.auth import Principal, current_user
+from cole_platform.kernel.auth import Principal, current_user, require_admin
 from cole_platform.kernel.db import get_db
 
 from . import service
@@ -24,3 +24,8 @@ def get_run(run_id: str, p: Principal = Depends(current_user), db: Session = Dep
 def cancel_run(run_id: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
     r = service.cancel_run(db, p, run_id)
     return {"id": r.id, "status": r.status}
+
+
+@router.get("/admin/runs/cost-summary")
+def cost_summary(p: Principal = Depends(require_admin), db: Session = Depends(get_db)):
+    return service.cost_summary(db)

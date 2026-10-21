@@ -38,22 +38,14 @@ def health():
     return {"ok": True, "env": settings.env}
 
 
-ROUTERS = [identity_router, catalog_router, import_router, assignments_router, workspaces_router, submissions_router]
-try:
-    from cole_platform.modules.runs.api import router as runs_router
-    from cole_platform.modules.plugins.api import router as plugins_router
+from cole_platform.modules.runs.api import router as runs_router  # noqa: E402
+from cole_platform.modules.plugins.api import router as plugins_router  # noqa: E402
+from cole_platform.modules.evaluations.api import router as evaluations_router  # noqa: E402
+from cole_platform.modules.llm_gateway.api import router as llm_router  # noqa: E402
 
-    ROUTERS += [runs_router, plugins_router]
-except ImportError:
-    pass
-
-try:
-    from cole_platform.modules.evaluations.api import router as evaluations_router
-    from cole_platform.modules.llm_gateway.api import router as llm_router
-
-    ROUTERS += [evaluations_router, llm_router]
-except ImportError:
-    pass
+# Imports are unconditional on purpose: a broken module must fail at startup, not silently drop its routes.
+ROUTERS = [identity_router, catalog_router, import_router, assignments_router, workspaces_router, submissions_router,
+           runs_router, plugins_router, evaluations_router, llm_router]
 
 for r in ROUTERS:
     app.include_router(r, prefix="/api")

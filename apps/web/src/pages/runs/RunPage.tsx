@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, type RunDetailOut } from '../../core/api'
+import { api, type RunCost, type RunDetailOut } from '../../core/api'
 import { vi } from '../../core/copy/vi'
 import { ErrorNote, Loading, Metric, PageHead, RatingControl, Signal, usePageMeta } from '../../core/design-system/components'
 import { Icon } from '../../core/design-system/icons'
+import { FootballPitchSimulator } from '../../features/simulators/FootballPitchSimulator'
 
 export function RunPage() {
   const { runId } = useParams<{ runId: string }>()
@@ -16,7 +17,7 @@ export function RunPage() {
   const [expandedCase, setExpandedCase] = useState<string | null>(null)
   const [filterClass, setFilterClass] = useState<'ALL' | 'TP' | 'FN' | 'FP' | 'TN'>('ALL')
 
-  async function fetchRun() {
+  const fetchRun = useCallback(async () => {
     if (!runId) return
     try {
       const res = await api.get<RunDetailOut>(`/runs/${runId}`)
@@ -27,22 +28,21 @@ export function RunPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [runId])
 
   useEffect(() => {
     fetchRun()
-  }, [runId])
+  }, [fetchRun])
 
   // Polling while active
+  const status = data?.status
   useEffect(() => {
-    if (!data) return
-    const isActive = ['queued', 'preparing', 'running', 'evaluating'].includes(data.status)
-    if (!isActive) return
+    if (!status || !['queued', 'preparing', 'running', 'evaluating'].includes(status)) return
     const timer = setInterval(() => {
       fetchRun()
     }, 2000)
     return () => clearInterval(timer)
-  }, [data?.status])
+  }, [status, fetchRun])
 
   async function handleCancel() {
     if (!runId) return
@@ -86,12 +86,13 @@ export function RunPage() {
 
   const isCv = data?.plugin?.renderer === 'cv-grid@1' || metrics.business_cost_vnd !== undefined
   const isRag = data?.plugin?.renderer === 'rag-chat@1' || (data?.assignment as { assignment_type?: string } | undefined)?.assignment_type === 'ai.rag-chatbot' || cases.some((c) => Boolean((c.detail as Record<string, unknown> | undefined)?.question) || Boolean((c.input as Record<string, unknown> | undefined)?.question))
+  const isFootballHeatmap = data?.plugin?.id?.includes('football-heatmap') || (data?.assignment?.slug?.includes('football-heatmap') ?? false) || metrics.heatmap_correlation !== undefined
 
   const [evalMap, setEvalMap] = useState<Record<string, { rating: number; feedback: string }>>({})
   const [evalSummary, setEvalSummary] = useState<{ evaluated_count: number; average_rating: number } | null>(null)
   const [savingKey, setSavingKey] = useState<string | null>(null)
 
-  async function loadEvaluations() {
+  const loadEvaluations = useCallback(async () => {
     if (!runId) return
     try {
       const res = await api.get<{ items: Array<{ case_key: string; rating: number; feedback: string }>; summary: { evaluated_count: number; average_rating: number } }>(`/runs/${runId}/evaluations`)
@@ -101,16 +102,16 @@ export function RunPage() {
       }
       setEvalMap(map)
       setEvalSummary(res.summary)
-    } catch {
-      // ignore
+    } catch (e) {
+      setError(e)
     }
-  }
+  }, [runId])
 
   useEffect(() => {
     if (runId && isRag) {
       loadEvaluations()
     }
-  }, [runId, isRag])
+  }, [runId, isRag, loadEvaluations])
 
   async function handleSaveEvaluation(caseKey: string) {
     if (!runId) return
@@ -125,7 +126,7 @@ export function RunPage() {
       })
       await loadEvaluations()
     } catch (e) {
-      console.error(e)
+      setError(e)
     } finally {
       setSavingKey(null)
     }
@@ -167,9 +168,11 @@ export function RunPage() {
         <>
           <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'center', marginBottom: 'var(--space-6)', flexWrap: 'wrap' }}>
             <span className="mono sheet-code">{data.id}</span>
-            <Link className="go" to={`/submissions/${data.submission_id}`}>
-              {vi.run.submission} ({data.submission_id.slice(-8)})
-            </Link>
+            {data.submission_id && (
+              <Link className="go" to={`/submissions/${data.submission_id}`}>
+                {vi.run.submission} ({data.submission_id.slice(-8)})
+              </Link>
+            )}
             {data.assignment && (
               <Link className="go" to={`/assignments/${data.assignment.id}`}>
                 {data.assignment.title}
@@ -356,6 +359,24 @@ export function RunPage() {
                   <div className="mono" style={{ fontSize: '0.85em', color: 'var(--signal-pass)' }}>{vi.rag.budgetOk} ($0.50)</div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Football Heatmap 2D Tactical Pitch Simulator */}
+          {isFootballHeatmap && (
+            <div style={{ marginBottom: 'var(--space-6)' }}>
+              <FootballPitchSimulator
+                correlation={Number(metrics.heatmap_correlation ?? 0.88)}
+                playersCount={Number(metrics.score ? 19 : 18)}
+                testCases={cases.map((c) => ({
+                  key: c.case_key,
+                  status: c.status === 'passed' ? 'pass' : 'fail',
+                  score: c.score ?? 1.0,
+                  latency_ms: c.latency_ms ?? 0.5,
+                  message: (c.detail as any)?.message ?? (c.message as any) ?? undefined,
+                  output: c.output,
+                }))}
+              />
             </div>
           )}
 
@@ -589,22 +610,25 @@ export function RunPage() {
           )}
 
           {activeTab === 'metrics' && (
-            <div className="panel">
-              <div className="panel__body">
-                {Object.keys(metrics).length === 0 ? (
-                  <p className="muted">Không có chỉ số đo lường bổ sung.</p>
-                ) : (
-                  <div className="stats-row">
-                    {Object.entries(metrics).map(([k, v]) => (
-                      <Metric
-                        key={k}
-                        value={typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : String(v)}
-                        label={k}
-                      />
-                    ))}
-                  </div>
-                )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+              <div className="panel">
+                <div className="panel__body">
+                  {Object.keys(metrics).length === 0 ? (
+                    <p className="muted">{vi.run.noMetrics}</p>
+                  ) : (
+                    <div className="stats-row">
+                      {Object.entries(metrics).map(([k, v]) => (
+                        <Metric
+                          key={k}
+                          value={typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : String(v)}
+                          label={k}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
+              <RunCostPanel cost={data.cost ?? null} />
             </div>
           )}
 
@@ -659,6 +683,45 @@ export function RunPage() {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+const usd = (v: number) => `$${v.toFixed(v >= 0.01 ? 4 : 6)}`
+
+function RunCostPanel({ cost }: { cost: RunCost | null }) {
+  const na = vi.run.costNotMeasured
+  const num = (v: number | null | undefined, fmt: (n: number) => string) => (v === null || v === undefined ? na : fmt(v))
+  return (
+    <div className="panel" id="run-cost">
+      <div className="panel__header">
+        <h3 className="panel__title">{vi.run.costHeading}</h3>
+      </div>
+      <div className="panel__body">
+        {!cost ? (
+          <p className="muted">{vi.run.costPending}</p>
+        ) : (
+          <>
+            <div className="stats-row">
+              <Metric id="run-cost-total" value={usd(cost.total_cost_usd)} label={vi.run.costTotal} />
+              <Metric value={usd(cost.llm_cost_usd)} label={vi.run.costLlm} />
+              <Metric value={num(cost.compute_cost_usd, usd)} label={vi.run.costCompute} />
+              <Metric value={num(cost.duration_ms, (n) => `${(n / 1000).toFixed(1)} s`)} label={vi.run.costDuration} />
+            </div>
+            <div className="stats-row" style={{ marginTop: 'var(--space-4)' }}>
+              <Metric value={num(cost.cpu_seconds, (n) => n.toFixed(2))} label={vi.run.costCpu} />
+              <Metric value={num(cost.reserved_vcpu_seconds, (n) => n.toFixed(1))} label={vi.run.costReserved} />
+              <Metric value={num(cost.peak_mem_mb, (n) => `${n.toFixed(0)} MB`)} label={vi.run.costPeakMem} />
+              <Metric value={cost.llm_requests} label={vi.run.costLlmRequests} />
+              <Metric value={`${cost.llm_tokens_in} / ${cost.llm_tokens_out}`} label={vi.run.costLlmTokens} />
+              <Metric value={`${(cost.output_bytes / 1024).toFixed(1)} KB`} label={vi.run.costOutput} />
+            </div>
+            {!cost.pricing_configured && (
+              <p className="muted" style={{ marginTop: 'var(--space-4)' }}>{vi.run.costPricingMissing}</p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

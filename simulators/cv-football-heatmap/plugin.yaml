@@ -1,0 +1,16 @@
+id: cole.cv-football-heatmap
+version: "1.0.0"
+contract: simulator.v1
+name: "Phân tích Video trận đấu & Heatmap sân bóng"
+description: "Mô hình Computer Vision tracking cầu thủ và lập bản đồ nhiệt chiến thuật trên sân bóng 105x68m."
+renderer: "generic-table@1"
+modes:
+  - describe
+  - validate-profile
+  - validate-submission
+  - run
+subject:
+  kind: python_entrypoint
+  artifact: entry
+  input_kind: json
+needs_llm: false

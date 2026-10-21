@@ -1,0 +1,23 @@
+{
+  "video_file": "bundesliga_match_clip.mp4",
+  "pitch_dimensions_meters": {
+    "length": 105.0,
+    "width": 68.0
+  },
+  "grid_resolution": {
+    "bins_x": 21,
+    "bins_y": 14
+  },
+  "summary": {
+    "duration_seconds": 30.0,
+    "total_frames": 750,
+    "team_a_name": "Bayern Munich (Đỏ)",
+    "team_b_name": "Borussia Dortmund (Vàng)",
+    "expected_avg_players": 20,
+    "active_zones": [
+      "center_midfield",
+      "right_wing",
+      "penalty_box_b"
+    ]
+  }
+}

@@ -155,11 +155,20 @@ class Context:
         self._write("validation.json", doc)
         return doc
 
-    def write_result(self, *, cases: list[dict], headline: dict, metrics: dict | None = None,
+    def write_result(self, *, cases: list[dict], headline: dict | None = None, metrics: dict | None = None,
                      passed: bool | None = None, renderer: str = "generic-table@1",
-                     extra: dict | None = None) -> dict:
+                     summary: dict | None = None, extra: dict | None = None) -> dict:
+        if summary is None:
+            summary = {"headline": headline or {}, "metrics": metrics or {}, "passed": passed}
+        else:
+            if headline and "headline" not in summary:
+                summary["headline"] = headline
+            if metrics and "metrics" not in summary:
+                summary["metrics"] = metrics
+            if passed is not None and "passed" not in summary:
+                summary["passed"] = passed
         doc = {"schema": RESULT_SCHEMA, "status": "completed", "renderer": renderer,
-               "summary": {"headline": headline, "metrics": metrics or {}, "passed": passed},
+               "summary": summary,
                "cases": cases, **(extra or {})}
         self._write("result.json", doc)
         return doc
@@ -180,10 +189,14 @@ def err(code: str, message_vi: str, hint_vi: str = "", artifact_key: str | None 
 Handler = Callable[[Context], Any]
 
 
-def main(handlers: dict[str, Handler]) -> None:
+def main(handlers: dict[str, Handler] | None = None, **kwargs) -> None:
     """Dispatch on COLE_MODE. Uncaught exceptions become a structured PLUGIN_ERROR, exit code 2."""
+    dispatch = dict(handlers or {})
+    for k, v in kwargs.items():
+        dispatch[k] = v
+        dispatch[k.replace("_", "-")] = v
     ctx = Context()
-    fn = handlers.get(ctx.mode)
+    fn = dispatch.get(ctx.mode)
     if fn is None:
         ctx.event("error", code="MODE_UNSUPPORTED", mode=ctx.mode)
         ctx._write("error.json", {"code": "MODE_UNSUPPORTED", "mode": ctx.mode})

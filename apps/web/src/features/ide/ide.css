@@ -477,3 +477,138 @@
     min-height: 100vh;
   }
 }
+
+/* ========================================================
+   PREMIUM ENTERPRISE AI STUDIO AESTHETICS & MICRO-ANIMATIONS
+   ======================================================== */
+
+@keyframes pulseGlowRed {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.85);
+    transform: scale(1.05);
+  }
+}
+
+@keyframes pulseGlowGreen {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.7);
+  }
+}
+
+@keyframes pulseGlowPurple {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(129, 140, 248, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(129, 140, 248, 0.8);
+  }
+}
+
+@keyframes shimmerGlow {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Enhanced Bar */
+.ide__bar {
+  background:
+    radial-gradient(600px 70px at 70% 0%, rgba(99, 102, 241, 0.15), transparent 70%),
+    radial-gradient(450px 60px at 20% 0%, rgba(249, 115, 22, 0.12), transparent 70%),
+    linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+/* Custom Sleek Scrollbar */
+.ide *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.ide *::-webkit-scrollbar-track {
+  background: rgba(13, 17, 23, 0.4);
+}
+.ide *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+.ide *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* File Tree Row Enhancements */
+.ftree__row {
+  border-radius: 4px;
+  margin: 1px 4px;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ftree__row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateX(2px);
+}
+.ftree__row.is-selected {
+  background: rgba(99, 102, 241, 0.18);
+  border-left: 2px solid #818cf8;
+  color: #ffffff;
+}
+
+/* File Types Colored Glyph Accents */
+.file-icon--py { color: #38bdf8 !important; }
+.file-icon--json { color: #fb923c !important; }
+.file-icon--yaml, .file-icon--yml { color: #c084fc !important; }
+.file-icon--img { color: #a78bfa !important; }
+.file-icon--video { color: #f43f5e !important; }
+.file-icon--md { color: #94a3b8 !important; }
+
+/* Image Studio Preview Canvas */
+.studio-image-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justifyContent: center;
+  height: 100%;
+  width: 100%;
+  padding: 32px;
+  background:
+    radial-gradient(circle at center, rgba(30, 41, 59, 0.5) 0%, rgba(15, 23, 42, 0.95) 100%),
+    repeating-conic-gradient(rgba(255, 255, 255, 0.02) 0% 25%, transparent 0% 50%) 50% / 24px 24px;
+}
+
+.studio-image-frame {
+  max-width: 92%;
+  max-height: 560px;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 25px 60px -15px rgba(0, 0, 0, 0.8),
+    0 0 25px rgba(99, 102, 241, 0.2);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+}
+.studio-image-frame:hover {
+  transform: scale(1.015);
+  box-shadow:
+    0 30px 70px -12px rgba(0, 0, 0, 0.9),
+    0 0 35px rgba(99, 102, 241, 0.35);
+}
+
+.studio-floating-toolbar {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 16px;
+  background: rgba(22, 27, 34, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+

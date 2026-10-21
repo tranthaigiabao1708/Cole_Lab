@@ -9,11 +9,14 @@ import { CourseDetailPage } from '../pages/courses/CourseDetailPage'
 import { CoursesPage } from '../pages/courses/CoursesPage'
 import { DashboardPage } from '../pages/dashboard/DashboardPage'
 import { ImportWizardPage } from '../pages/teach/ImportWizardPage'
+import { AssignmentBuilderPage } from '../pages/teach/AssignmentBuilderPage'
+import { SimulatorRegistryPage } from '../pages/teach/SimulatorRegistryPage'
 import { AssignmentPage } from '../pages/assignments/AssignmentPage'
 import { SubmissionDetailPage, SubmissionsPage } from '../pages/submissions/SubmissionsPages'
 import { RunPage } from '../pages/runs/RunPage'
 import { PluginsPage } from '../pages/admin/PluginsPage'
 import { RuntimePage } from '../pages/admin/RuntimePage'
+import { CostsPage } from '../pages/admin/CostsPage'
 import { Shell } from './Shell'
 
 const WorkspacePage = lazy(() => import('../features/ide/WorkspacePage').then((m) => ({ default: m.WorkspacePage })))
@@ -76,9 +79,12 @@ export function App() {
             <Route path="runs/:runId" element={<RunPage />} />
             <Route path="teach/import" element={<RequireAuth role="teacher"><ImportWizardPage /></RequireAuth>} />
             <Route path="teach/import/:importId" element={<RequireAuth role="teacher"><ImportWizardPage /></RequireAuth>} />
+            <Route path="teach/simulators" element={<RequireAuth role="teacher"><SimulatorRegistryPage /></RequireAuth>} />
+            <Route path="teach/assignments/new" element={<RequireAuth role="teacher"><AssignmentBuilderPage /></RequireAuth>} />
             <Route path="admin/users" element={<RequireAuth role="admin"><AdminUsersPage /></RequireAuth>} />
             <Route path="admin/plugins" element={<RequireAuth role="admin"><PluginsPage /></RequireAuth>} />
             <Route path="admin/runtime" element={<RequireAuth role="admin"><RuntimePage /></RequireAuth>} />
+            <Route path="admin/costs" element={<RequireAuth role="admin"><CostsPage /></RequireAuth>} />
             <Route path="admin/audit" element={<RequireAuth role="admin"><AdminAuditPage /></RequireAuth>} />
             <Route path="*" element={<NotFound />} />
           </Route>

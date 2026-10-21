@@ -188,8 +188,12 @@ def run(ctx: Context) -> None:
     p50 = round(latencies[len(latencies) // 2], 2) if latencies else 0.0
     p95 = round(latencies[int(len(latencies) * 0.95)], 2) if latencies else 0.0
 
+    passed = (errors_count == 0 and success_rate >= 0.8)
+
     ctx.write_result(
         cases=out_cases,
+        renderer="rag-chat@1",
+        passed=passed,
         headline={
             "score": round(success_rate, 4),
             "total_questions": total,
@@ -207,20 +211,16 @@ def run(ctx: Context) -> None:
             "p95_latency_ms": p95,
             "error_count": errors_count,
         },
-        summary={
-            "headline": {
-                "score": round(success_rate, 4),
-                "total_questions": total,
-                "success_rate": round(success_rate, 4),
-                "avg_latency_ms": avg_lat,
-                "p50_latency_ms": p50,
-                "p95_latency_ms": p95,
-                "error_count": errors_count,
-            },
+        extra={
             "cases_evaluated": total,
         },
     )
 
 
 if __name__ == "__main__":
-    main(describe=describe, validate_profile=validate_profile, validate_submission=validate_submission, run=run)
+    main({
+        "describe": describe,
+        "validate-profile": validate_profile,
+        "validate-submission": validate_submission,
+        "run": run,
+    })

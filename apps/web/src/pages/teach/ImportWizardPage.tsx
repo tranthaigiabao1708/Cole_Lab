@@ -473,7 +473,7 @@ function ImportEditor({ id }: { id: string }) {
 }
 
 export function ImportWizardPage() {
-  usePageMeta(vi.meta.importTitle, 'Nhập đề cương khóa học từ tệp Excel.')
+  usePageMeta(vi.meta.importTitle, 'Nhập khung chương trình khóa học từ tệp Excel.')
   const { importId } = useParams()
   return (
     <div className="page">
