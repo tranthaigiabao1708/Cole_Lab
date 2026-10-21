@@ -2,11 +2,12 @@ import pytest
 from sqlalchemy import select
 from conftest import login
 from cole_platform.kernel.db import SessionLocal
+from cole_platform.kernel.ids import new_id
 from cole_platform.modules.identity.models import User
 from cole_platform.modules.plugins.service import scan_and_register
 from cole_platform.modules.plugins.models import PluginVersion
 from cole_platform.modules.assignments.package import import_all
-from cole_platform.modules.assignments.models import Assignment
+from cole_platform.modules.assignments.models import Assignment, AssignmentVersion
 from cole_platform.modules.runs.models import Run
 from cole_platform.modules.llm_gateway.service import create_virtual_key, handle_chat_completion, get_key_by_secret
 from cole_platform.modules.evaluations.service import save_evaluation, get_evaluations_for_run
@@ -65,26 +66,25 @@ def test_llm_gateway_virtual_key_and_mock(seeded):
 
 def test_evaluations_service(seeded):
     with SessionLocal() as db:
-        user = db.scalar(select(UserAccount).where(UserAccount.email == "student@cole.local"))
+        user = db.scalar(select(User).where(User.email == "student@cole.local"))
         run = db.scalar(select(Run))
         assert user is not None
 
-        run_id = run.id if run else "run_dummy"
-        if not run:
-            from cole_platform.kernel.ids import new_id
-            from cole_platform.modules.catalog.models import Course
-            run = Run(
-                id=new_id("run"),
-                assignment_id="asg_dummy",
-                assignment_version_id="asv_dummy",
-                plugin_version_id="plv_dummy",
-                user_id=user.id,
-                mode="run",
-                status="succeeded",
-            )
-            db.add(run)
-            db.commit()
-            run_id = run.id
+        asg = db.scalar(select(Assignment))
+        asv = db.scalar(select(AssignmentVersion))
+        pv = db.scalar(select(PluginVersion))
+        run = Run(
+            id=new_id("run"),
+            assignment_id=asg.id,
+            assignment_version_id=asv.id,
+            plugin_version_id=pv.id,
+            user_id=user.id,
+            mode="run",
+            status="succeeded",
+        )
+        db.add(run)
+        db.commit()
+        run_id = run.id
 
         ev = save_evaluation(
             db=db,

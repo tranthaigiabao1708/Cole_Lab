@@ -18,6 +18,8 @@ Tài liệu này ghi lại **trung thực** những điểm mà mã nguồn POC 
 | D12 | 3 | Quản lý container runtime | Runner agent trên Windows kết nối Docker daemon qua named pipe nội bộ của Docker Desktop | Tránh mở cổng TCP Docker không an toàn trên host | Trên Linux server production dùng unix socket `/var/run/docker.sock` |
 | D13 | 4 | Simulator CV OK/NG | Evaluator tính toán ma trận nhầm lẫn 2x2 (TN/FP/FN/TP) và quy đổi rủi ro tài chính trực tiếp: `total_cost = fn * 500.000 + fp * 40.000` VNĐ | Đảm bảo tính ứng dụng doanh nghiệp thực tế theo đề bài đào tạo | Giữ nguyên cho mọi simulator sản xuất |
 | D14 | 4 | Frontend Renderer `cv-grid@1` | Banner rủi ro tài chính nổi bật, ma trận nhầm lẫn tương tác lọc test case khi click | Nâng cao trải nghiệm học viên khi phân tích kết quả mô hình | Chuẩn hóa vào Design System cho các bài toán phân loại |
+| D15 | 5 | LLM Gateway & Virtual Keys | Triển khai virtual API key tự sinh theo run/workspace kèm hard budget ($0.50); hỗ trợ mock provider tất định cho dev local không cần internet/key ngoài | Đảm bảo hệ thống POC chạy offline/local ổn định | Bật provider ngoài qua `COLE_LLM_PROVIDER=openai` |
+| D16 | 5 | Đánh giá RAG Chatbot | Cơ chế kết hợp: Simulator chạy tự động 8 tình huống kiểm tra (đo latency, guardrails, ảnh multimodal inline base64) và UI hỗ trợ `<RatingControl>` 1–5 sao cho học viên tự đánh giá lưu DB | Tối ưu sư phạm theo tài liệu doc 09 §A | Sẵn sàng mở rộng LLM-as-judge sau POC |
 
 ## Kiểm chứng bảo mật đã chạy (Phase 2)
 
