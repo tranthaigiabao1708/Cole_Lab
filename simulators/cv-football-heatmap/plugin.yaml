@@ -3,7 +3,8 @@ version: "1.0.0"
 contract: simulator.v1
 name: "Phân tích Video trận đấu & Heatmap sân bóng"
 description: "Mô hình Computer Vision tracking cầu thủ và lập bản đồ nhiệt chiến thuật trên sân bóng 105x68m."
-renderer: "generic-table@1"
+image: "cole/sim-cv-football-heatmap:1.0.0"
+renderer: "football-pitch@1"
 modes:
   - describe
   - validate-profile

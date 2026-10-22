@@ -22,9 +22,19 @@ def _ws_out(db: Session, ws, p: Principal) -> dict:
 
     a = db.get(Assignment, ws.assignment_id)
     av = db.get(AssignmentVersion, ws.assignment_version_id)
-    return {"id": ws.id, "assignment": {"id": a.id, "slug": a.slug, "title": a.title},
-            "version": av.version, "run_command": av.run_command, "contract": av.contract,
-            "manifest": ws.manifest, "owner": ws.user_id == p.id, "dataset": av.dataset_info}
+    return {
+        "id": ws.id,
+        "assignment": {"id": a.id, "slug": a.slug, "title": a.title},
+        "version": av.version,
+        "run_command": av.run_command,
+        "contract": av.contract,
+        "manifest": ws.manifest,
+        "owner": ws.user_id == p.id,
+        "dataset": av.dataset_info,
+        "plugin_id": av.plugin_id,
+        "rubric": av.rubric or [],
+    }
+
 
 
 @router.post("/assignments/{assignment_id}/workspace")
@@ -164,3 +174,103 @@ async def pty_proxy(ws: WebSocket, ws_id: str, cols: int = 120, rows: int = 32):
     finally:
         with contextlib.suppress(Exception):
             await ws.close()
+
+
+class StepProgressIn(BaseModel):
+    status: str
+    time_spent_seconds: int | None = None
+    meta: dict | None = None
+
+
+class StepUnlockHintIn(BaseModel):
+    level: int
+
+
+@router.get("/workspaces/{ws_id}/steps")
+def get_steps(ws_id: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    ws_item = service.get_owned(db, p, ws_id)
+    return service.get_steps_progress(db, ws_item)
+
+
+@router.post("/workspaces/{ws_id}/steps/{step_id}/progress")
+def set_step_progress(
+    ws_id: str,
+    step_id: str,
+    body: StepProgressIn,
+    p: Principal = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    ws_item = service.get_owned(db, p, ws_id, write=True)
+    return service.update_step_progress(
+        db,
+        ws_item,
+        step_id,
+        status=body.status,
+        time_spent_seconds=body.time_spent_seconds,
+        meta=body.meta,
+    )
+
+
+@router.post("/workspaces/{ws_id}/steps/{step_id}/unlock-hint")
+def unlock_hint(
+    ws_id: str,
+    step_id: str,
+    body: StepUnlockHintIn,
+    p: Principal = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    ws_item = service.get_owned(db, p, ws_id, write=True)
+    return service.unlock_step_hint(db, ws_item, step_id, level=body.level)
+
+
+@router.get("/teach/assignments/{assignment_id}/class-progress")
+def teach_class_progress(
+    assignment_id: str,
+    p: Principal = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return service.get_class_progress(db, p, assignment_id)
+
+
+class ScaffoldIn(BaseModel):
+    files: list[str]
+
+
+@router.post("/workspaces/{ws_id}/scaffold")
+def workspace_scaffold(
+    ws_id: str,
+    body: ScaffoldIn,
+    p: Principal = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    ws_item = service.get_owned(db, p, ws_id, write=True)
+    return service.scaffold_workspace(db, ws_item, body.files)
+
+
+class AiTutorConsultIn(BaseModel):
+    step_id: str
+    question: str
+    active_file: str | None = None
+    current_code: str | None = None
+    tree_files: list[str] | None = None
+
+
+@router.post("/workspaces/{ws_id}/ai-tutor")
+def workspace_ai_tutor(
+    ws_id: str,
+    body: AiTutorConsultIn,
+    p: Principal = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    ws_item = service.get_owned(db, p, ws_id)
+    return service.ai_tutor_consult(
+        db,
+        ws_item,
+        step_id=body.step_id,
+        question=body.question,
+        active_file=body.active_file,
+        current_code=body.current_code,
+        tree_files=body.tree_files,
+    )
+
+

@@ -5,6 +5,7 @@ import { vi } from '../../core/copy/vi'
 import { ErrorNote, Loading, Metric, SheetCode, Signal, formatDateTime, usePageMeta } from '../../core/design-system/components'
 import { Icon } from '../../core/design-system/icons'
 import { Markdown } from '../../core/design-system/Markdown'
+import { useAuth } from '../../core/auth'
 import { useAsync } from '../../core/useAsync'
 import { trackOf } from '../../tracks/config'
 
@@ -149,6 +150,9 @@ export function AssignmentPage() {
     }
   }
 
+  const { user } = useAuth()
+  const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
+
   const tabs: Tab[] = ['readme', 'docs', 'data', 'contract', 'history']
 
   return (
@@ -168,10 +172,23 @@ export function AssignmentPage() {
               <Metric value={<span style={{ fontSize: 'var(--fs-lg)' }}>{a.simulator.plugin_id}</span>} label={vi.assignment.simulator} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', alignItems: 'flex-end' }}>
-              <button className="btn btn--ember" onClick={openWs} disabled={opening} id="btn-open-workspace">
-                <Icon name="terminal" />
-                {opening ? vi.assignment.opening : vi.assignment.openWorkspace}
-              </button>
+              <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+                {isTeacher && (
+                  <Link
+                    to={`/teach/assignments/${a.id}/monitor`}
+                    className="btn btn--ghost"
+                    id="btn-class-monitor"
+                    title="Giám sát tiến độ học viên theo thời gian thực"
+                  >
+                    <Icon name="list" />
+                    Giám sát lớp học
+                  </Link>
+                )}
+                <button className="btn btn--ember" onClick={openWs} disabled={opening} id="btn-open-workspace">
+                  <Icon name="terminal" />
+                  {opening ? vi.assignment.opening : vi.assignment.openWorkspace}
+                </button>
+              </div>
               {openErr ? <ErrorNote error={openErr} id="open-ws-error" /> : null}
             </div>
           </div>

@@ -11,6 +11,7 @@ import { DashboardPage } from '../pages/dashboard/DashboardPage'
 import { ImportWizardPage } from '../pages/teach/ImportWizardPage'
 import { AssignmentBuilderPage } from '../pages/teach/AssignmentBuilderPage'
 import { SimulatorRegistryPage } from '../pages/teach/SimulatorRegistryPage'
+import { ClassStepMonitorPage } from '../pages/teach/ClassStepMonitorPage'
 import { AssignmentPage } from '../pages/assignments/AssignmentPage'
 import { SubmissionDetailPage, SubmissionsPage } from '../pages/submissions/SubmissionsPages'
 import { RunPage } from '../pages/runs/RunPage'
@@ -81,6 +82,7 @@ export function App() {
             <Route path="teach/import/:importId" element={<RequireAuth role="teacher"><ImportWizardPage /></RequireAuth>} />
             <Route path="teach/simulators" element={<RequireAuth role="teacher"><SimulatorRegistryPage /></RequireAuth>} />
             <Route path="teach/assignments/new" element={<RequireAuth role="teacher"><AssignmentBuilderPage /></RequireAuth>} />
+            <Route path="teach/assignments/:assignmentId/monitor" element={<RequireAuth role="teacher"><ClassStepMonitorPage /></RequireAuth>} />
             <Route path="admin/users" element={<RequireAuth role="admin"><AdminUsersPage /></RequireAuth>} />
             <Route path="admin/plugins" element={<RequireAuth role="admin"><PluginsPage /></RequireAuth>} />
             <Route path="admin/runtime" element={<RequireAuth role="admin"><RuntimePage /></RequireAuth>} />

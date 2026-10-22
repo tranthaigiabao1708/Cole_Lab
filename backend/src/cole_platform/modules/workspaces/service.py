@@ -21,7 +21,7 @@ from cole_platform.kernel.errors import AppError, bad_request, not_found
 from cole_platform.kernel.ids import new_id
 from cole_platform.kernel.storage import storage
 
-from .models import Workspace
+from .models import Workspace, WorkspaceStepProgress
 
 HIDDEN = {".local", "__pycache__", ".cache", ".ipynb_checkpoints", ".bash_history", ".python_history"}
 MAX_TEXT = 2 * 1024 * 1024
@@ -239,3 +239,290 @@ def delete(db: Session, ws: Workspace, rel: str) -> dict:
     else:
         raise not_found("Tệp")
     return {"path": rel}
+
+
+def get_steps_progress(db: Session, ws: Workspace) -> list[dict]:
+    from cole_platform.modules.assignments.models import AssignmentVersion
+    av = db.get(AssignmentVersion, ws.assignment_version_id)
+    rubric = av.rubric if av and av.rubric else []
+
+    rows = db.scalars(
+        select(WorkspaceStepProgress).where(WorkspaceStepProgress.workspace_id == ws.id)
+    ).all()
+    progress_map = {r.step_id: r for r in rows}
+
+    out = []
+    for idx, item in enumerate(rubric):
+        sid = item.get("id") or f"step_{idx+1}"
+        prog = progress_map.get(sid)
+        out.append({
+            "step_id": sid,
+            "status": prog.status if prog else "not_started",
+            "hints_unlocked_level": prog.hints_unlocked_level if prog else 0,
+            "time_spent_seconds": prog.time_spent_seconds if prog else 0,
+            "meta": prog.meta if prog else {},
+            "updated_at": prog.updated_at.isoformat() if prog and prog.updated_at else None,
+        })
+    return out
+
+
+def update_step_progress(
+    db: Session,
+    ws: Workspace,
+    step_id: str,
+    status: str,
+    time_spent_seconds: int | None = None,
+    meta: dict | None = None,
+) -> dict:
+    prog = db.scalar(
+        select(WorkspaceStepProgress).where(
+            WorkspaceStepProgress.workspace_id == ws.id,
+            WorkspaceStepProgress.step_id == step_id,
+        )
+    )
+    if not prog:
+        prog = WorkspaceStepProgress(
+            id=new_id("wsp"),
+            workspace_id=ws.id,
+            step_id=step_id,
+            status=status,
+            time_spent_seconds=time_spent_seconds or 0,
+            meta=meta or {},
+        )
+        db.add(prog)
+    else:
+        prog.status = status
+        if time_spent_seconds is not None:
+            prog.time_spent_seconds += time_spent_seconds
+        if meta:
+            prog.meta = {**prog.meta, **meta}
+    db.commit()
+    return {
+        "step_id": prog.step_id,
+        "status": prog.status,
+        "hints_unlocked_level": prog.hints_unlocked_level,
+        "time_spent_seconds": prog.time_spent_seconds,
+        "meta": prog.meta,
+    }
+
+
+def unlock_step_hint(db: Session, ws: Workspace, step_id: str, level: int) -> dict:
+    prog = db.scalar(
+        select(WorkspaceStepProgress).where(
+            WorkspaceStepProgress.workspace_id == ws.id,
+            WorkspaceStepProgress.step_id == step_id,
+        )
+    )
+    if not prog:
+        prog = WorkspaceStepProgress(
+            id=new_id("wsp"),
+            workspace_id=ws.id,
+            step_id=step_id,
+            status="in_progress",
+            hints_unlocked_level=level,
+        )
+        db.add(prog)
+    else:
+        if level > prog.hints_unlocked_level:
+            prog.hints_unlocked_level = level
+    db.commit()
+    return {
+        "step_id": prog.step_id,
+        "status": prog.status,
+        "hints_unlocked_level": prog.hints_unlocked_level,
+        "time_spent_seconds": prog.time_spent_seconds,
+    }
+
+
+def get_class_progress(db: Session, p: Principal, assignment_id: str) -> dict:
+    from cole_platform.kernel.rbac import can_manage_course
+    from cole_platform.modules.assignments.models import Assignment, AssignmentVersion
+    from cole_platform.modules.identity.models import User
+
+    a = db.get(Assignment, assignment_id)
+    if not a:
+        raise not_found("Assignment")
+    if not can_manage_course(db, p, a.course_id):
+        from cole_platform.kernel.errors import forbidden
+        raise forbidden()
+
+    av = db.scalar(select(AssignmentVersion).where(AssignmentVersion.assignment_id == a.id).order_by(AssignmentVersion.version.desc()))
+    rubric = av.rubric if av and av.rubric else []
+
+    workspaces = db.scalars(
+        select(Workspace).where(Workspace.assignment_id == a.id)
+    ).all()
+
+    learners = []
+    for ws in workspaces:
+        user = db.get(User, ws.user_id)
+        progs = db.scalars(
+            select(WorkspaceStepProgress).where(WorkspaceStepProgress.workspace_id == ws.id)
+        ).all()
+        pmap = {pr.step_id: pr for pr in progs}
+
+        steps_out = []
+        for idx, item in enumerate(rubric):
+            sid = item.get("id") or f"step_{idx+1}"
+            pr = pmap.get(sid)
+            steps_out.append({
+                "step_id": sid,
+                "title": item.get("title", f"Bước {idx+1}"),
+                "status": pr.status if pr else "not_started",
+                "hints_unlocked_level": pr.hints_unlocked_level if pr else 0,
+                "time_spent_seconds": pr.time_spent_seconds if pr else 0,
+            })
+
+        learners.append({
+            "workspace_id": ws.id,
+            "user_id": ws.user_id,
+            "user_name": user.name if user else ws.user_id,
+            "email": user.email if user else "",
+            "last_active_at": ws.last_active_at.isoformat() if ws.last_active_at else None,
+            "steps": steps_out,
+            "passed_count": sum(1 for s in steps_out if s["status"] == "passed"),
+            "total_count": len(steps_out),
+        })
+
+    return {
+        "assignment_id": a.id,
+        "title": a.title,
+        "rubric_steps": rubric,
+        "learners": learners,
+        "total_learners": len(learners),
+    }
+
+
+def scaffold_workspace(db: Session, ws: Workspace, files: list[str]) -> dict:
+    created = []
+    for f in files:
+        rel = f.strip().strip("/")
+        if not rel:
+            continue
+        try:
+            target = resolve(db, ws, rel, for_write=True)
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                ext = target.suffix.lower()
+                starter = ""
+                if ext == ".py":
+                    starter = f'"""\nTệp: {rel}\nKhởi tạo theo cấu trúc chuẩn của bài thực hành.\n"""\n\n'
+                elif ext == ".json":
+                    starter = "{}\n"
+                elif ext in [".yaml", ".yml"]:
+                    starter = "# Configuration file\n"
+                elif ext == ".txt":
+                    starter = f"# {rel}\n"
+                target.write_text(starter, encoding="utf-8")
+                created.append(rel)
+        except Exception:
+            pass
+    return {"status": "ok", "created": created}
+
+
+def ai_tutor_consult(
+    db: Session,
+    ws: Workspace,
+    step_id: str,
+    question: str,
+    active_file: str | None = None,
+    current_code: str | None = None,
+    tree_files: list[str] | None = None,
+) -> dict:
+    from cole_platform.modules.assignments.models import AssignmentVersion
+    av = db.get(AssignmentVersion, ws.assignment_version_id)
+    rubric = av.rubric if av and av.rubric else []
+
+    # Identify all required files across all rubric items
+    all_required_files = []
+    for item in rubric:
+        rf = item.get("required_files") or []
+        if isinstance(rf, str):
+            rf = [s.strip() for s in rf.split(",") if s.strip()]
+        for f in rf:
+            if f not in all_required_files:
+                all_required_files.append(f)
+
+    # Check current step
+    is_step_0 = step_id in ["step_0", "step_0_scaffold", "scaffold"]
+    target_step = None
+    step_index = 0
+    if not is_step_0:
+        for idx, item in enumerate(rubric):
+            sid = item.get("id") or f"step_{idx+1}"
+            if sid == step_id:
+                target_step = item
+                step_index = idx + 1
+                break
+
+    # Analyze file tree status
+    tree_set = set(tree_files or [])
+    missing_files = [f for f in all_required_files if f not in tree_set and not any(t.endswith(f) for t in tree_set)]
+
+    reply_lines = []
+    recommendations = []
+
+    q_lower = (question or "").lower()
+    if is_step_0 or ("cấu trúc" in q_lower or "thư mục" in q_lower or "file" in q_lower or "tạo" in q_lower):
+        reply_lines.append("📁 **Hướng dẫn Bước 0: Thiết lập cấu trúc thư mục & tệp dự án**")
+        if missing_files:
+            reply_lines.append(f"Hiện tại dự án còn thiếu **{len(missing_files)}** tệp/thư mục cần thiết theo quy định của giáo viên:")
+            for mf in missing_files:
+                reply_lines.append(f"- `○ {mf}` (chưa tạo)")
+            reply_lines.append("\n👉 Bạn có thể bấm nút **'⚡ Tạo nhanh khung cấu trúc'** hoặc dùng thanh công cụ Explorer bên trái để tạo các tệp này.")
+            recommendations.append("Bấm 'Tạo nhanh khung cấu trúc' để hoàn thành Bước 0")
+        else:
+            reply_lines.append("✅ **Tuyệt vời! Cấu trúc thư mục của bạn đã đầy đủ 100%.**")
+            if rubric:
+                first_step = rubric[0]
+                reply_lines.append(f"\nBây giờ hãy chuyển sang **Việc 1: {first_step.get('title', 'Bước 1')}**.")
+                recommendations.append(f"Bắt đầu Việc 1: {first_step.get('title')}")
+
+    elif target_step:
+        stitle = target_step.get("title", f"Bước {step_index}")
+        stool = target_step.get("tool", "Quy chuẩn")
+        req_kw = target_step.get("required_keywords", [])
+        if isinstance(req_kw, str):
+            req_kw = [s.strip() for s in req_kw.split(",") if s.strip()]
+        req_f = target_step.get("required_files", [])
+        if isinstance(req_f, str):
+            req_f = [s.strip() for s in req_f.split(",") if s.strip()]
+
+        reply_lines.append(f"🎯 **Việc {step_index}: {stitle}** (Công cụ: `{stool}`)")
+        if target_step.get("mentor_hint"):
+            reply_lines.append(f"\n💬 *Lời dặn của giáo viên:* \"{target_step.get('mentor_hint')}\"")
+
+        # Code inspection
+        code = current_code or ""
+        missing_kw = [kw for kw in req_kw if kw.lower() not in code.lower()]
+        passed_kw = [kw for kw in req_kw if kw.lower() in code.lower()]
+
+        if req_f and active_file and not any(active_file.endswith(rf) for rf in req_f):
+            reply_lines.append(f"\n⚠️ **Lưu ý tệp:** Bạn đang mở `{active_file}`. Giáo viên yêu cầu thực hiện bước này trên `{req_f[0]}`. Hãy mở đúng tệp nhé!")
+            recommendations.append(f"Mở tệp {req_f[0]}")
+
+        if missing_kw:
+            reply_lines.append(f"\n🔍 **Tiêu chuẩn cần bổ sung trong mã nguồn:**")
+            for m in missing_kw:
+                reply_lines.append(f"- Cần định nghĩa/gọi hàm: `{m}`")
+            if passed_kw:
+                reply_lines.append(f"\nĐã có sẵn: " + ", ".join(f"`{k}`" for k in passed_kw))
+        else:
+            reply_lines.append("\n🎉 **Code của bạn đã chứa đầy đủ các hàm/từ khóa quy định!** Hãy lưu tệp và chạy thử nghiệm Simulator để kiểm tra độ chính xác.")
+
+        hints = target_step.get("hints", [])
+        h1 = next((h.get("content") for h in hints if h.get("level") == 1), None)
+        if h1:
+            reply_lines.append(f"\n💡 **Gợi ý định hướng (Level 1):** {h1}")
+
+    else:
+        reply_lines.append("🤖 Tôi là Trợ giảng AI đồng hành. Tôi sẽ theo sát mã nguồn và tệp của bạn theo đúng lộ trình do giáo viên thiết kế.")
+        reply_lines.append("Hãy chọn một bước cụ thể hoặc đặt câu hỏi về mã nguồn/tiêu chí thực hành!")
+
+    return {
+        "reply": "\n".join(reply_lines),
+        "step_id": step_id,
+        "recommendations": recommendations,
+        "missing_files": missing_files,
+    }
+

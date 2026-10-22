@@ -12,6 +12,9 @@ import { ManifestPanel, type Manifest } from './ManifestPanel'
 import { languageOf } from './monacoSetup'
 import { TerminalPane, type TerminalHandle } from './TerminalPane'
 import { FootballPitchSimulator } from '../simulators/FootballPitchSimulator'
+import { RagChatSimulator } from '../simulators/RagChatSimulator'
+import { CvInspectionSimulator } from '../simulators/CvInspectionSimulator'
+import { GenericSimulatorModal } from '../simulators/GenericSimulatorModal'
 import { LabCopilotPanel } from './LabCopilotPanel'
 import { AiQualityGateBar, evaluateMissions, QualityGateBlockedModal, type QualityMission } from './AiQualityGateBar'
 import './ide.css'
@@ -24,6 +27,8 @@ interface WsInfo {
   contract: Contract
   manifest: Manifest
   owner: boolean
+  plugin_id?: string
+  rubric?: any[]
 }
 interface OpenFile {
   path: string
@@ -65,6 +70,7 @@ export function WorkspacePage() {
   const [simRunData, setSimRunData] = useState<any>(null)
   const [simSubmitting, setSimSubmitting] = useState(false)
   const [blockedMissions, setBlockedMissions] = useState<QualityMission[]>([])
+  const [activeMissionId, setActiveMissionId] = useState<string | null>(null)
 
   const loadTree = useCallback(async () => {
     try {
@@ -185,7 +191,20 @@ export function WorkspacePage() {
     }
   }
 
-  async function handleApplyFix(missionId: string) {
+  async function handleApplyFix(missionId: string, targetFile?: string, code?: string) {
+    if (targetFile && code) {
+      let finalCode = code
+      const existing = files.find((f) => f.path === targetFile)
+      if (existing && !existing.content.includes(code.trim().slice(0, 30))) {
+        finalCode = existing.content + '\n\n' + code
+      }
+      await op(() => api.put(`/workspaces/${workspaceId}/files/content`, { path: targetFile, content: finalCode }))
+      await loadTree()
+      await openFile(targetFile)
+      api.post(`/workspaces/${workspaceId}/steps/${missionId}/progress`, { status: 'in_progress', time_spent_seconds: 15 }).catch(() => undefined)
+      return
+    }
+
     if (missionId === 'preprocessing') {
       let code = ''
       try {
@@ -244,8 +263,8 @@ export function WorkspacePage() {
     await save().catch(setOpErr)
     const curFile = files.find((f) => f.path === active) ?? null
     const currentCode = curFile?.content ?? ''
-    const missions = evaluateMissions(tree, currentCode)
-    const missing = missions.filter((m) => m.status === 'missing')
+    const missions = evaluateMissions(tree, currentCode, info.data?.rubric, info.data?.plugin_id)
+    const missing = missions.filter((m) => m.status === 'missing' && m.isBlocking !== false)
     if (missing.length > 0) {
       setBlockedMissions(missing)
       return
@@ -284,6 +303,8 @@ export function WorkspacePage() {
   if (info.error || !info.data) return <div className="page"><ErrorNote error={info.error} onRetry={info.reload} id="ws-error" /></div>
   const w = info.data
   const cur = files.find((f) => f.path === active) ?? null
+  const currentCode = cur?.content ?? ''
+  const missions = evaluateMissions(tree, currentCode, w.rubric, w.plugin_id)
   const dirty = new Set(files.filter((f) => f.content !== f.saved).map((f) => f.path))
   const memPct = status?.mem_limit ? Math.round(((status.mem_used ?? 0) / status.mem_limit) * 100) : null
 
@@ -416,9 +437,65 @@ export function WorkspacePage() {
           tree={tree}
           currentCode={cur?.content ?? ''}
           activeFilePath={cur?.path ?? null}
-          onOpenCopilot={() => setShowCopilotModal(true)}
+          rubric={w.rubric}
+          pluginId={w.plugin_id}
+          assignmentTitle={w.assignment.title}
+          onOpenCopilot={(missionId) => {
+            if (missionId) setActiveMissionId(missionId)
+            setShowCopilotModal(true)
+          }}
           onApplyFix={handleApplyFix}
         />
+        {(() => {
+          const currentMission = missions.find((m) => m.status !== 'passed') || missions[0]
+          if (!currentMission) return null
+          const isScaffold = currentMission.id === 'step_0_scaffold'
+          return (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 16px',
+                background: isScaffold ? 'rgba(59, 130, 246, 0.15)' : 'rgba(99, 102, 241, 0.12)',
+                borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
+                fontSize: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px' }}>{isScaffold ? '📁' : '🎯'}</span>
+                <span style={{ color: isScaffold ? '#93c5fd' : '#c7d2fe', fontWeight: 700 }}>
+                  {isScaffold ? 'Bước 0 (Khởi đầu):' : currentMission.stepNumber > 0 ? `Việc ${currentMission.stepNumber}:` : 'Mục tiêu:'}
+                </span>
+                <span style={{ color: '#f1f5f9', fontWeight: 500 }}>{currentMission.title}</span>
+                {currentMission.targetFile && (
+                  <span style={{ color: '#94a3b8', fontSize: '11px' }}>
+                    — Tệp: <code style={{ color: '#a5b4fc' }}>{currentMission.targetFile}</code>
+                  </span>
+                )}
+              </div>
+              <button
+                className="btn btn--ghost btn--sm"
+                onClick={() => {
+                  setActiveMissionId(currentMission.id)
+                  setShowCopilotModal(true)
+                }}
+                style={{
+                  fontSize: '11px',
+                  padding: '3px 10px',
+                  color: '#38bdf8',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontWeight: 600,
+                }}
+              >
+                <span>🤖 Xem hướng dẫn & Gợi ý AI</span>
+                <Icon name="arrowRight" size={11} />
+              </button>
+            </div>
+          )
+        })()}
         <div className="ide__tabs" role="tablist">
           {files.map((f) => (
             <div key={f.path} className={`ide__tab${f.path === active ? ' is-active' : ''}`} role="tab" aria-selected={f.path === active}>
@@ -634,7 +711,51 @@ export function WorkspacePage() {
                   Hệ thống đang quét video trận đấu, phân tích cự ly đội hình và tính toán ma trận bản đồ nhiệt 2D...
                 </p>
               </div>
-            ) : (
+            ) : w.plugin_id === 'cole.rag-chatbot' ? (
+              <RagChatSimulator
+                onClose={() => setShowSimModal(false)}
+                onSubmitOfficial={async () => {
+                  const currentMissions = evaluateMissions(tree, currentCode, w.rubric, w.plugin_id)
+                  const missing = currentMissions.filter((m) => m.status === 'missing' && m.isBlocking !== false)
+                  if (missing.length > 0) {
+                    setShowSimModal(false)
+                    setBlockedMissions(missing)
+                    return
+                  }
+                  setSimSubmitting(true)
+                  try {
+                    await api.post(`/workspaces/${workspaceId}/submit`, { manifest: w.manifest })
+                    alert('Đã nộp bài chính thức thành công! Toàn bộ tiêu chuẩn RAG và câu trả lời kiểm định đã được lưu.')
+                    setShowSimModal(false)
+                  } finally {
+                    setSimSubmitting(false)
+                  }
+                }}
+                isSubmitting={simSubmitting}
+              />
+            ) : w.plugin_id === 'cole.cv-ok-ng' ? (
+              <CvInspectionSimulator
+                onClose={() => setShowSimModal(false)}
+                onSubmitOfficial={async () => {
+                  const currentMissions = evaluateMissions(tree, currentCode, w.rubric, w.plugin_id)
+                  const missing = currentMissions.filter((m) => m.status === 'missing' && m.isBlocking !== false)
+                  if (missing.length > 0) {
+                    setShowSimModal(false)
+                    setBlockedMissions(missing)
+                    return
+                  }
+                  setSimSubmitting(true)
+                  try {
+                    await api.post(`/workspaces/${workspaceId}/submit`, { manifest: w.manifest })
+                    alert('Đã nộp bài chính thức thành công! Kết quả kiểm định ngoại quan linh kiện đã được lưu.')
+                    setShowSimModal(false)
+                  } finally {
+                    setSimSubmitting(false)
+                  }
+                }}
+                isSubmitting={simSubmitting}
+              />
+            ) : w.plugin_id === 'cole.cv-football-heatmap' ? (
               <FootballPitchSimulator
                 correlation={Number(simRunData?.summary?.metrics?.heatmap_correlation ?? 0.88)}
                 playersCount={Number(simRunData?.summary?.headline?.score ? 19 : 18)}
@@ -648,10 +769,8 @@ export function WorkspacePage() {
                 })) || []}
                 onClose={() => setShowSimModal(false)}
                 onSubmitOfficial={async () => {
-                  const curFile = files.find((f) => f.path === active) ?? null
-                  const currentCode = curFile?.content ?? ''
-                  const missions = evaluateMissions(tree, currentCode)
-                  const missing = missions.filter((m) => m.status === 'missing')
+                  const currentMissions = evaluateMissions(tree, currentCode, w.rubric, w.plugin_id)
+                  const missing = currentMissions.filter((m) => m.status === 'missing' && m.isBlocking !== false)
                   if (missing.length > 0) {
                     setShowSimModal(false)
                     setBlockedMissions(missing)
@@ -668,6 +787,37 @@ export function WorkspacePage() {
                 }}
                 isSubmitting={simSubmitting}
               />
+            ) : (
+              <GenericSimulatorModal
+                pluginId={w.plugin_id}
+                assignmentTitle={w.assignment.title}
+                testCases={simRunData?.cases?.map((c: any) => ({
+                  key: c.case_key,
+                  status: c.status === 'passed' ? 'pass' : 'fail',
+                  score: c.score ?? 1.0,
+                  latency_ms: c.latency_ms ?? 0.5,
+                  message: c.detail?.message ?? c.message ?? undefined,
+                }))}
+                onClose={() => setShowSimModal(false)}
+                onSubmitOfficial={async () => {
+                  const currentMissions = evaluateMissions(tree, currentCode, w.rubric, w.plugin_id)
+                  const missing = currentMissions.filter((m) => m.status === 'missing' && m.isBlocking !== false)
+                  if (missing.length > 0) {
+                    setShowSimModal(false)
+                    setBlockedMissions(missing)
+                    return
+                  }
+                  setSimSubmitting(true)
+                  try {
+                    await api.post(`/workspaces/${workspaceId}/submit`, { manifest: w.manifest })
+                    alert('Đã nộp bài chính thức thành công! Toàn bộ tiêu chuẩn kiểm định đã được lưu.')
+                    setShowSimModal(false)
+                  } finally {
+                    setSimSubmitting(false)
+                  }
+                }}
+                isSubmitting={simSubmitting}
+              />
             )}
           </div>
         </div>
@@ -676,8 +826,18 @@ export function WorkspacePage() {
       {showCopilotModal && (
         <LabCopilotPanel
           onClose={() => setShowCopilotModal(false)}
+          workspaceId={workspaceId}
+          missions={missions}
+          initialMissionId={activeMissionId}
           currentAccuracy={simRunData?.summary?.headline?.score ?? 1.0}
           currentLatencyMs={simRunData?.cases?.[0]?.latency_ms ?? 0.5}
+          pluginId={w.plugin_id}
+          tree={tree}
+          activeFilePath={cur?.path ?? null}
+          currentCode={cur?.content ?? ''}
+          onOpenFile={openFile}
+          onReloadTree={loadTree}
+          onApplyFix={handleApplyFix}
         />
       )}
 
@@ -685,7 +845,10 @@ export function WorkspacePage() {
         <QualityGateBlockedModal
           missingMissions={blockedMissions}
           onClose={() => setBlockedMissions([])}
-          onOpenMission={(id) => handleApplyFix(id)}
+          onOpenMission={(id) => {
+            const m = missions.find((x) => x.id === id)
+            handleApplyFix(id, m?.targetFile, m?.remedyCode)
+          }}
           onOpenCopilot={() => {
             setBlockedMissions([])
             setShowCopilotModal(true)

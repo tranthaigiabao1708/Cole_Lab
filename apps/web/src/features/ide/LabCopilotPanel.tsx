@@ -1,16 +1,28 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { api } from '../../core/api'
 import { Icon } from '../../core/design-system/icons'
+import type { QualityMission } from './AiQualityGateBar'
 
 interface LabCopilotPanelProps {
   onClose: () => void
+  workspaceId: string
+  missions: QualityMission[]
+  initialMissionId?: string | null
   currentAccuracy?: number
   currentLatencyMs?: number
+  pluginId?: string
+  tree?: Array<{ path: string; type: string }>
+  activeFilePath?: string | null
+  currentCode?: string
+  onOpenFile?: (path: string) => void
+  onReloadTree?: () => Promise<void> | void
+  onApplyFix?: (missionId: string, targetFile?: string, code?: string) => Promise<void>
 }
 
 // Dữ liệu mô phỏng quá trình huấn luyện 30 Epochs
 const TRAINING_HISTORY = [
   { epoch: 1, trainLoss: 2.85, valLoss: 2.92, map50: 0.22 },
-  { epoch: 3, trainLoss: 2.10, valLoss: 2.25, map50: 0.38 },
+  { epoch: 3, trainLoss: 2.1, valLoss: 2.25, map50: 0.38 },
   { epoch: 5, trainLoss: 1.62, valLoss: 1.78, map50: 0.52 },
   { epoch: 8, trainLoss: 1.15, valLoss: 1.35, map50: 0.65 },
   { epoch: 10, trainLoss: 0.88, valLoss: 1.12, map50: 0.72 },
@@ -23,10 +35,145 @@ const TRAINING_HISTORY = [
   { epoch: 30, trainLoss: 0.12, valLoss: 1.95, map50: 0.84 },
 ]
 
-export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatencyMs = 0.5 }: LabCopilotPanelProps) {
-  const [activeTab, setActiveTab] = useState<'advisor' | 'curves' | 'preprocessing'>('advisor')
-  const [selectedFilter, setSelectedFilter] = useState<'none' | 'grayscale' | 'bg_removal' | 'gradient' | 'clahe' | 'letterbox'>('clahe')
+export function LabCopilotPanel({
+  onClose,
+  workspaceId,
+  missions = [],
+  initialMissionId = null,
+  currentAccuracy = 1.0,
+  currentLatencyMs = 0.5,
+  pluginId,
+  tree = [],
+  activeFilePath,
+  currentCode = '',
+  onOpenFile,
+  onReloadTree,
+  onApplyFix,
+}: LabCopilotPanelProps) {
+  const [activeTab, setActiveTab] = useState<'steps' | 'playbook' | 'curves' | 'preprocessing'>('steps')
+  const [selectedMissionId, setSelectedMissionId] = useState<string>(
+    initialMissionId || (missions[0]?.id ?? ''),
+  )
+  const [unlockedLevels, setUnlockedLevels] = useState<Record<string, number>>({})
+  const [applying, setApplying] = useState(false)
+  const [scaffolding, setScaffolding] = useState(false)
+  const [scaffoldMsg, setScaffoldMsg] = useState<string | null>(null)
+
+  // AI Tutor chat states
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'ai' | 'user'; content: string; time: string }>>([
+    {
+      role: 'ai',
+      content: '👋 **Chào bạn!** Tôi là Trợ giảng AI đồng hành. Tôi sẽ theo sát các bước và mã nguồn của bạn theo đúng quy trình giáo viên đã đề ra. Bạn cần hỗ trợ gì ở bước này?',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    },
+  ])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [selectedFilter, setSelectedFilter] = useState<
+    'none' | 'grayscale' | 'bg_removal' | 'gradient' | 'clahe' | 'letterbox'
+  >('clahe')
   const [hoveredEpoch, setHoveredEpoch] = useState<number | null>(15)
+
+  const handleScaffold = async (files: string[]) => {
+    setScaffolding(true)
+    setScaffoldMsg(null)
+    try {
+      const res = await api.post<{ created: string[] }>(`/workspaces/${workspaceId}/scaffold`, { files })
+      await onReloadTree?.()
+      setScaffoldMsg(`Đã tạo thành công ${res.created.length} tệp/thư mục!`)
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'ai',
+          content: `✅ **Đã hoàn thành Bước 0!** Cấu trúc thư mục đã được khởi tạo (${res.created.join(', ')}). Bây giờ bạn hãy mở danh sách bước và chuyển sang **Việc 1** để bắt đầu viết logic nhé!`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ])
+    } catch (err: any) {
+      setScaffoldMsg('Lỗi khởi tạo: ' + (err?.message || 'Không thể tạo tệp'))
+    } finally {
+      setScaffolding(false)
+    }
+  }
+
+  const handleSendChat = async (questionText?: string) => {
+    const q = (questionText || chatInput).trim()
+    if (!q || chatLoading) return
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const userMsg = { role: 'user' as const, content: q, time: now }
+    setChatMessages((prev) => [...prev, userMsg])
+    if (!questionText) setChatInput('')
+    setChatLoading(true)
+
+    try {
+      const treeList = tree.map((t) => t.path)
+      const res = await api.post<{ reply: string }>(`/workspaces/${workspaceId}/ai-tutor`, {
+        step_id: selectedMission?.id || 'step_0_scaffold',
+        question: q,
+        active_file: activeFilePath,
+        current_code: currentCode,
+        tree_files: treeList,
+      })
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'ai',
+          content: res.reply,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ])
+    } catch {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'ai',
+          content: '⚠️ Không thể kết nối với dịch vụ Trợ giảng AI. Bạn hãy tiếp tục theo dõi các gợi ý Level 1/2/3 bên trên nhé.',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  // Load backend unlocked hint levels
+  useEffect(() => {
+    if (!workspaceId) return
+    api
+      .get<Array<{ step_id: string; hints_unlocked_level: number }>>(`/workspaces/${workspaceId}/steps`)
+      .then((res) => {
+        if (Array.isArray(res)) {
+          const map: Record<string, number> = {}
+          res.forEach((r) => {
+            map[r.step_id] = r.hints_unlocked_level
+          })
+          setUnlockedLevels((prev) => ({ ...prev, ...map }))
+        }
+      })
+      .catch(() => undefined)
+  }, [workspaceId])
+
+  useEffect(() => {
+    if (initialMissionId) {
+      setSelectedMissionId(initialMissionId)
+      setActiveTab('steps')
+    }
+  }, [initialMissionId])
+
+  const selectedMission =
+    missions.find((m) => m.id === selectedMissionId) || missions[0] || null
+
+  const handleUnlockHint = async (stepId: string, level: number) => {
+    setUnlockedLevels((prev) => ({
+      ...prev,
+      [stepId]: Math.max(prev[stepId] || 1, level),
+    }))
+    try {
+      await api.post(`/workspaces/${workspaceId}/steps/${stepId}/unlock-hint`, { level })
+    } catch {
+      // Non-blocking
+    }
+  }
 
   // SVG Chart Dimensions
   const chartW = 540
@@ -39,27 +186,32 @@ export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatency
   }
 
   function yLoss(loss: number) {
-    // Loss từ 0 đến 3.2
     return chartH - padY - (loss / 3.2) * (chartH - 2 * padY)
   }
 
   function yMap(map: number) {
-    // mAP từ 0 đến 1.0
     return chartH - padY - map * (chartH - 2 * padY)
   }
 
-  const trainLossPath = TRAINING_HISTORY.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xCoord(d.epoch)} ${yLoss(d.trainLoss)}`).join(' ')
-  const valLossPath = TRAINING_HISTORY.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xCoord(d.epoch)} ${yLoss(d.valLoss)}`).join(' ')
-  const mapPath = TRAINING_HISTORY.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xCoord(d.epoch)} ${yMap(d.map50)}`).join(' ')
+  const trainLossPath = TRAINING_HISTORY.map(
+    (d, i) => `${i === 0 ? 'M' : 'L'} ${xCoord(d.epoch)} ${yLoss(d.trainLoss)}`,
+  ).join(' ')
+  const valLossPath = TRAINING_HISTORY.map(
+    (d, i) => `${i === 0 ? 'M' : 'L'} ${xCoord(d.epoch)} ${yLoss(d.valLoss)}`,
+  ).join(' ')
+  const mapPath = TRAINING_HISTORY.map(
+    (d, i) => `${i === 0 ? 'M' : 'L'} ${xCoord(d.epoch)} ${yMap(d.map50)}`,
+  ).join(' ')
 
-  const selectedData = TRAINING_HISTORY.find((d) => d.epoch === hoveredEpoch) || TRAINING_HISTORY[6]
+  const selectedData =
+    TRAINING_HISTORY.find((d) => d.epoch === hoveredEpoch) || TRAINING_HISTORY[6]
 
   return (
     <div
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.82)',
+        background: 'rgba(0, 0, 0, 0.85)',
         backdropFilter: 'blur(6px)',
         zIndex: 10000,
         display: 'flex',
@@ -72,11 +224,11 @@ export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatency
       <div
         style={{
           width: '100%',
-          maxWidth: '1060px',
+          maxWidth: '1120px',
           background: '#13181e',
           border: '1px solid #374151',
           borderRadius: '12px',
-          boxShadow: '0 25px 60px rgba(0,0,0,0.8)',
+          boxShadow: '0 25px 60px rgba(0,0,0,0.85)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
@@ -113,7 +265,7 @@ export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatency
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#f3f4f6' }}>
-                  Cố vấn Kỹ thuật Thực chiến (Enterprise Tech Lead Mentor)
+                  Cố vấn Thực hành & Gợi ý Thông minh (Lab Step Mentor)
                 </h2>
                 <span
                   style={{
@@ -126,8 +278,23 @@ export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatency
                     fontWeight: 600,
                   }}
                 >
-                  TECH LEAD MENTOR
+                  TEACHER HINTS · 3 LEVELS
                 </span>
+                {pluginId && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#93c5fd',
+                      border: '1px solid rgba(59, 130, 246, 0.4)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {pluginId}
+                  </span>
+                )}
                 <span
                   style={{
                     fontSize: '11px',
@@ -143,7 +310,7 @@ export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatency
                 </span>
               </div>
               <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>
-                Hướng dẫn chẩn đoán mô hình, kỹ thuật tiền xử lý ảnh và quy trình tối ưu doanh nghiệp
+                Theo dõi tiến độ thực hành theo từng bước do giảng viên thiết lập và nhận gợi ý lũy tiến
               </div>
             </div>
           </div>
@@ -169,12 +336,20 @@ export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatency
           }}
         >
           <button
-            className={`btn btn--sm ${activeTab === 'advisor' ? 'btn--ember' : 'btn--ghost'}`}
-            onClick={() => setActiveTab('advisor')}
+            className={`btn btn--sm ${activeTab === 'steps' ? 'btn--ember' : 'btn--ghost'}`}
+            onClick={() => setActiveTab('steps')}
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            <span>💡</span>
-            <span>Trợ lý Chẩn đoán & Gợi ý (Copilot Advice)</span>
+            <span>🎯</span>
+            <span>Hướng dẫn & Gợi ý từng bước (Step Mentor)</span>
+          </button>
+          <button
+            className={`btn btn--sm ${activeTab === 'playbook' ? 'btn--ember' : 'btn--ghost'}`}
+            onClick={() => setActiveTab('playbook')}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <span>🩺</span>
+            <span>Playbook Chẩn đoán Tình huống Thực tế</span>
           </button>
           <button
             className={`btn btn--sm ${activeTab === 'curves' ? 'btn--ember' : 'btn--ghost'}`}
@@ -182,7 +357,7 @@ export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatency
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             <span>📈</span>
-            <span>Biểu đồ Train / Loss & Chẩn đoán Overfitting</span>
+            <span>Biểu đồ Train / Loss & Overfitting</span>
           </button>
           <button
             className={`btn btn--sm ${activeTab === 'preprocessing' ? 'btn--ember' : 'btn--ghost'}`}
@@ -190,133 +365,676 @@ export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatency
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             <span>🖼️</span>
-            <span>Studio Tiền xử lý & Augmentation Trực quan</span>
+            <span>Studio Tiền xử lý Trực quan</span>
           </button>
         </div>
 
-        {/* TAB 1: COPILOT ADVICE & TROUBLESHOOTING */}
+        {/* BODY CONTENT */}
         <div style={{ padding: '24px', overflowY: 'auto', flex: 1, background: '#11161d' }}>
-          {activeTab === 'advisor' && (
+          {/* TAB 1: STEP-BY-STEP MENTOR */}
+          {activeTab === 'steps' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px', alignItems: 'start' }}>
+              {/* CỘT TRÁI: DANH SÁCH BƯỚC */}
+              <div
+                style={{
+                  background: '#161d26',
+                  borderRadius: '10px',
+                  border: '1px solid #303e4d',
+                  padding: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#9ca3af', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Lộ trình bài thực hành
+                </div>
+
+                {missions.map((m) => {
+                  const isSelected = m.id === selectedMission?.id
+                  const isPassed = m.status === 'passed'
+                  const isWarning = m.status === 'warning'
+                  const currentLevel = unlockedLevels[m.id] || 1
+
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedMissionId(m.id)}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: isSelected
+                          ? '1.5px solid #6366f1'
+                          : isPassed
+                          ? '1px solid rgba(16, 185, 129, 0.4)'
+                          : '1px solid #283340',
+                        background: isSelected
+                          ? 'rgba(99, 102, 241, 0.15)'
+                          : isPassed
+                          ? 'rgba(16, 185, 129, 0.05)'
+                          : '#121820',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: isPassed ? '#34d399' : isWarning ? '#fbbf24' : '#f87171',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <span>{isPassed ? '✓' : isWarning ? '⚡' : '○'}</span>
+                          <span>Bước {m.stepNumber}</span>
+                        </span>
+
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            background: '#232f3e',
+                            color: '#93c5fd',
+                          }}
+                        >
+                          {m.toolName}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#f3f4f6' }}>
+                        {m.shortLabel || m.title}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                        <span>
+                          {isPassed ? 'Đã đạt tiêu chuẩn' : isWarning ? 'Đang hoàn thiện' : 'Chưa hoàn thành'}
+                        </span>
+                        <span>Gợi ý: L{currentLevel}/3</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* CỘT PHẢI: CHI TIẾT BƯỚC ĐƯỢC CHỌN & TRỢ GIẢNG AI */}
+              {selectedMission ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* NẾU LÀ BƯỚC 0: THIẾT LẬP CẤU TRÚC THƯ MỤC DỰ ÁN */}
+                  {selectedMission.id === 'step_0_scaffold' ? (
+                    <div
+                      style={{
+                        background: 'linear-gradient(135deg, #1a2230 0%, #121822 100%)',
+                        border: '1px solid #3b82f6',
+                        borderRadius: '10px',
+                        padding: '18px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '14px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            background: selectedMission.status === 'passed' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                            color: selectedMission.status === 'passed' ? '#34d399' : '#facc15',
+                            border: `1px solid ${selectedMission.status === 'passed' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(234, 179, 8, 0.4)'}`,
+                          }}
+                        >
+                          {selectedMission.status === 'passed' ? '✓ CẤU TRÚC ĐẦY ĐỦ' : '○ CHƯA HOÀN THÀNH CẤU TRÚC'}
+                        </span>
+                        <span style={{ fontSize: '12px', color: '#93c5fd' }}>
+                          Khởi đầu theo quy chuẩn giáo viên
+                        </span>
+                      </div>
+
+                      <h3 style={{ margin: 0, fontSize: '17px', color: '#f3f4f6', fontWeight: 600 }}>
+                        {selectedMission.title}
+                      </h3>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#cbd5e1', lineHeight: '1.6' }}>
+                        {selectedMission.description}
+                      </p>
+
+                      {/* DANH SÁCH TỆP & TRẠNG THÁI THỜI GIAN THỰC */}
+                      <div style={{ background: '#0d1218', borderRadius: '8px', padding: '12px', border: '1px solid #232d3b' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '8px' }}>
+                          Checklist các tệp/thư mục cần chuẩn bị:
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {(selectedMission.requiredFiles || []).map((file) => {
+                            const exists = tree.some((t) => t.path === file || t.path.endsWith(file))
+                            return (
+                              <div
+                                key={file}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '6px 10px',
+                                  background: exists ? 'rgba(16, 185, 129, 0.08)' : 'rgba(234, 179, 8, 0.08)',
+                                  borderRadius: '6px',
+                                  border: `1px solid ${exists ? 'rgba(16, 185, 129, 0.25)' : 'rgba(234, 179, 8, 0.25)'}`,
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ color: exists ? '#34d399' : '#facc15', fontWeight: 700 }}>
+                                    {exists ? '✓' : '○'}
+                                  </span>
+                                  <code style={{ fontSize: '12px', color: exists ? '#a7f3d0' : '#fef08a' }}>{file}</code>
+                                </div>
+                                {exists && onOpenFile && (
+                                  <button
+                                    className="btn btn--ghost btn--sm"
+                                    onClick={() => onOpenFile(file)}
+                                    style={{ fontSize: '11px', padding: '2px 8px', color: '#60a5fa' }}
+                                  >
+                                    Mở tệp
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* NÚT THAO TÁC NHANH */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <button
+                          className="btn btn--ember btn--sm"
+                          onClick={() => handleScaffold(selectedMission.requiredFiles || [])}
+                          disabled={scaffolding || selectedMission.status === 'passed'}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Icon name="plus" size={12} />
+                          <span>{scaffolding ? 'Đang khởi tạo...' : '⚡ Tạo nhanh cấu trúc mẫu (1-Click)'}</span>
+                        </button>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                          hoặc dùng nút (+) trên Explorer bên trái để tự tạo thủ công.
+                        </span>
+                      </div>
+
+                      {scaffoldMsg && (
+                        <div style={{ fontSize: '12px', color: '#34d399', background: 'rgba(16, 185, 129, 0.1)', padding: '6px 10px', borderRadius: '4px' }}>
+                          {scaffoldMsg}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* BANNER BƯỚC THỰC HIỆN LOGIC (VIỆC 1, VIỆC 2...) */
+                    <div
+                      style={{
+                        background: 'linear-gradient(135deg, #1e2634 0%, #161c26 100%)',
+                        border: '1px solid #374151',
+                        borderRadius: '10px',
+                        padding: '18px 20px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              background: selectedMission.status === 'passed' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                              color: selectedMission.status === 'passed' ? '#34d399' : '#f87171',
+                              border: `1px solid ${selectedMission.status === 'passed' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                            }}
+                          >
+                            {selectedMission.status === 'passed' ? '✓ ĐÃ ĐẠT CHUẨN' : '○ CHƯA HOÀN THÀNH'}
+                          </span>
+                          <span style={{ fontSize: '12px', color: '#9ca3af' }}>
+                            Công cụ: <strong style={{ color: '#60a5fa' }}>{selectedMission.toolName}</strong>
+                          </span>
+                        </div>
+
+                        {selectedMission.targetFile && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: '#9ca3af' }}>
+                              Tệp mục tiêu: <code style={{ color: '#a5b4fc' }}>{selectedMission.targetFile}</code>
+                            </span>
+                            {onOpenFile && activeFilePath !== selectedMission.targetFile && (
+                              <button
+                                className="btn btn--ghost btn--sm"
+                                onClick={() => onOpenFile(selectedMission.targetFile!)}
+                                style={{ fontSize: '11px', padding: '2px 8px', color: '#38bdf8' }}
+                              >
+                                Mở tệp này
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <h3 style={{ margin: '0 0 8px', fontSize: '17px', color: '#f3f4f6', fontWeight: 600 }}>
+                        {selectedMission.title}
+                      </h3>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#d1d5db', lineHeight: '1.6' }}>
+                        {selectedMission.description}
+                      </p>
+
+                      {/* THEO DÕI TIÊU CHUẨN CODE THỜI GIAN THỰC */}
+                      {selectedMission.requiredKeywords?.length ? (
+                        <div
+                          style={{
+                            marginTop: '12px',
+                            padding: '10px 14px',
+                            background: 'rgba(0, 0, 0, 0.35)',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          <div style={{ color: '#9ca3af', marginBottom: '6px', fontWeight: 600 }}>
+                            Hàm / Từ khóa quy định bởi giáo viên (Live Code Check):
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {selectedMission.requiredKeywords.map((kw) => {
+                              const passed = currentCode.toLowerCase().includes(kw.toLowerCase())
+                              return (
+                                <span
+                                  key={kw}
+                                  style={{
+                                    padding: '3px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    background: passed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                                    color: passed ? '#34d399' : '#facc15',
+                                    border: `1px solid ${passed ? 'rgba(16, 185, 129, 0.4)' : 'rgba(234, 179, 8, 0.4)'}`,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  <span>{passed ? '✓' : '○'}</span>
+                                  <code>{kw}</code>
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* HỆ THỐNG GỢI Ý 3 CẤP ĐỘ (PROGRESSIVE HINTING) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>💡</span>
+                      <span>Hệ thống Gợi ý Lũy tiến (Progressive Hints Engine)</span>
+                    </div>
+
+                    {/* CẤP ĐỘ 1: GỢI Ý ĐỊNH HƯỚNG / KHÁI NIỆM */}
+                    <div
+                      style={{
+                        background: '#161f2c',
+                        border: '1px solid #2d3b4f',
+                        borderRadius: '8px',
+                        padding: '14px 18px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <div style={{ fontWeight: 600, fontSize: '13px', color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>💡</span>
+                          <span>Cấp độ 1: Gợi ý định hướng (Conceptual Hint)</span>
+                        </div>
+                        <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 600 }}>Luôn mở sẵn</span>
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#d1d5db', lineHeight: '1.5' }}>
+                        {selectedMission.hints?.[0]?.content || selectedMission.instructorNote || 'Nắm vững yêu cầu bài toán trước khi bắt tay vào triển khai.'}
+                      </div>
+                    </div>
+
+                    {/* CẤP ĐỘ 2: GỢI Ý KỸ THUẬT & THƯ VIỆN */}
+                    {(() => {
+                      const level2Unlocked = (unlockedLevels[selectedMission.id] || 0) >= 2
+                      return (
+                        <div
+                          style={{
+                            background: level2Unlocked ? '#18241e' : '#141a22',
+                            border: level2Unlocked ? '1px solid #059669' : '1px dashed #374151',
+                            borderRadius: '8px',
+                            padding: '14px 18px',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <div style={{ fontWeight: 600, fontSize: '13px', color: level2Unlocked ? '#34d399' : '#9ca3af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>🔍</span>
+                              <span>Cấp độ 2: Gợi ý kỹ thuật & Thư viện (Technical Guide)</span>
+                            </div>
+                            {!level2Unlocked ? (
+                              <button
+                                className="btn btn--sm btn--ghost"
+                                onClick={() => handleUnlockHint(selectedMission.id, 2)}
+                                style={{ fontSize: '11px', color: '#60a5fa' }}
+                              >
+                                🔓 Mở khóa Gợi ý Kỹ thuật
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: '#34d399', fontWeight: 600 }}>Đã mở khóa</span>
+                            )}
+                          </div>
+
+                          {level2Unlocked ? (
+                            <div style={{ fontSize: '13px', color: '#e5e7eb', lineHeight: '1.5' }}>
+                              {selectedMission.hints?.[1]?.content ||
+                                `Sử dụng thư viện ${selectedMission.toolName}. Đảm bảo các hàm và tệp tin đúng chuẩn nghiệp vụ.`}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                              Bấm nút mở khóa phía trên nếu bạn đang gặp khúc mắc về cách sử dụng thư viện hoặc tham số kỹ thuật.
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+
+                    {/* CẤP ĐỘ 3: KHUNG MÃ THAM KHẢO & ÁP DỤNG */}
+                    {(() => {
+                      const level3Unlocked = (unlockedLevels[selectedMission.id] || 0) >= 3
+                      const codeSnippet = selectedMission.hints?.[2]?.content || selectedMission.remedyCode || ''
+
+                      return (
+                        <div
+                          style={{
+                            background: level3Unlocked ? '#1a1c29' : '#141a22',
+                            border: level3Unlocked ? '1px solid #6366f1' : '1px dashed #374151',
+                            borderRadius: '8px',
+                            padding: '14px 18px',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <div style={{ fontWeight: 600, fontSize: '13px', color: level3Unlocked ? '#a5b4fc' : '#9ca3af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>⚡</span>
+                              <span>Cấp độ 3: Khung mã tham khảo (Code Boilerplate)</span>
+                            </div>
+                            {!level3Unlocked ? (
+                              <button
+                                className="btn btn--sm btn--ghost"
+                                onClick={() => handleUnlockHint(selectedMission.id, 3)}
+                                style={{ fontSize: '11px', color: '#fbbf24' }}
+                              >
+                                🔓 Mở khóa Khung mã mẫu
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: '#a5b4fc', fontWeight: 600 }}>Đã mở khóa</span>
+                            )}
+                          </div>
+
+                          {level3Unlocked ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                              <pre
+                                style={{
+                                  background: '#0d1117',
+                                  padding: '12px',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  color: '#7ee787',
+                                  overflowX: 'auto',
+                                  margin: 0,
+                                  maxHeight: '180px',
+                                  border: '1px solid #30363d',
+                                }}
+                              >
+                                <code>{codeSnippet || '# Chưa có mã mẫu bổ sung cho bước này'}</code>
+                              </pre>
+
+                              {onApplyFix && codeSnippet ? (
+                                <button
+                                  className="btn btn--ember btn--sm"
+                                  onClick={async () => {
+                                    setApplying(true)
+                                    try {
+                                      await onApplyFix(selectedMission.id, selectedMission.targetFile, codeSnippet)
+                                    } finally {
+                                      setApplying(false)
+                                    }
+                                  }}
+                                  disabled={applying}
+                                  style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                >
+                                  <span>{applying ? 'Đang áp dụng...' : 'Áp dụng mã này vào Editor'}</span>
+                                  <Icon name="arrowRight" size={12} />
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                              Khuyên dùng: Hãy tự tư duy và triển khai trước khi mở khung mã tham khảo để nắm vững bản chất kỹ thuật.
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+
+                  {/* KHUNG TRỢ GIẢNG AI ĐỒNG HÀNH (FOLLOW-ALONG AI TUTOR CHAT) */}
+                  <div
+                    style={{
+                      background: '#151b23',
+                      border: '1px solid #30363d',
+                      borderRadius: '10px',
+                      padding: '16px 18px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                      marginTop: '8px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, fontSize: '14px', color: '#e2e8f0' }}>
+                        <span>🤖</span>
+                        <span>Trợ giảng AI Đồng hành (Live Follow-Along Tutor)</span>
+                      </div>
+                      <span style={{ fontSize: '11px', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.1)', padding: '2px 8px', borderRadius: '4px' }}>
+                        Bám sát định hướng của giáo viên
+                      </span>
+                    </div>
+
+                    {/* VÙNG TIN NHẮN CHAT */}
+                    <div
+                      style={{
+                        background: '#0d1117',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        border: '1px solid #21262d',
+                        maxHeight: '220px',
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                      }}
+                    >
+                      {chatMessages.map((msg, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                            maxWidth: '85%',
+                            background: msg.role === 'user' ? '#312e81' : '#1e293b',
+                            color: '#f8fafc',
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            lineHeight: '1.5',
+                            whiteSpace: 'pre-line',
+                            border: `1px solid ${msg.role === 'user' ? '#4338ca' : '#334155'}`,
+                          }}
+                        >
+                          <div style={{ fontSize: '10px', color: msg.role === 'user' ? '#c7d2fe' : '#94a3b8', marginBottom: '2px' }}>
+                            {msg.role === 'user' ? 'Bạn' : '🤖 Trợ giảng AI'} · {msg.time}
+                          </div>
+                          {msg.content}
+                        </div>
+                      ))}
+                      {chatLoading && (
+                        <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                          Trợ giảng AI đang phân tích bài làm của bạn...
+                        </div>
+                      )}
+                    </div>
+
+                    {/* CÂU HỎI NHANH (PROMPT CHIPS) */}
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => handleSendChat('Cấu trúc thư mục của tôi đã chuẩn theo yêu cầu chưa?')}
+                        disabled={chatLoading}
+                        style={{ fontSize: '11px', padding: '3px 8px', color: '#93c5fd' }}
+                      >
+                        📁 Cấu trúc thư mục
+                      </button>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => handleSendChat('Việc này cần làm cụ thể những gì?')}
+                        disabled={chatLoading}
+                        style={{ fontSize: '11px', padding: '3px 8px', color: '#a7f3d0' }}
+                      >
+                        🎯 Việc này cần làm gì?
+                      </button>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => handleSendChat('Kiểm tra code tôi vừa viết đã đạt yêu cầu chưa?')}
+                        disabled={chatLoading}
+                        style={{ fontSize: '11px', padding: '3px 8px', color: '#fde047' }}
+                      >
+                        🔍 Kiểm tra code hiện tại
+                      </button>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => handleSendChat('Gợi ý tư duy và giải thuật cho bước này')}
+                        disabled={chatLoading}
+                        style={{ fontSize: '11px', padding: '3px 8px', color: '#f472b6' }}
+                      >
+                        💡 Gợi ý tư duy
+                      </button>
+                    </div>
+
+                    {/* Ô NHẬP TIN NHẮN */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
+                        placeholder="Hỏi trợ giảng AI về bước này hoặc cách viết code..."
+                        style={{
+                          flex: 1,
+                          background: '#0d1117',
+                          border: '1px solid #30363d',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          padding: '8px 12px',
+                          fontSize: '12px',
+                        }}
+                      />
+                      <button
+                        className="btn btn--ember btn--sm"
+                        onClick={() => handleSendChat()}
+                        disabled={chatLoading || !chatInput.trim()}
+                        style={{ padding: '0 16px', fontWeight: 600 }}
+                      >
+                        Gửi
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: '#9ca3af' }}>Chọn một bước để xem chi tiết hướng dẫn.</div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: PLAYBOOK CHẨN ĐOÁN */}
+          {activeTab === 'playbook' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
-              {/* CỘT TRÁI: CÁC VẤN ĐỀ THƯỜNG GẶP KHI ĐI LÀM */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span>🩺</span>
                   <span>Chẩn đoán & Xử lý Tình huống Thực tế (Diagnostic Playbook)</span>
                 </div>
 
-                {/* Tình huống 1: Loss không giảm */}
                 <div style={{ background: '#171e27', border: '1px solid #374151', borderRadius: '8px', padding: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ fontWeight: 600, fontSize: '13px', color: '#f59e0b' }}>
                       1. Khi Train mà Loss không giảm (Underfitting / Stalled Training)
                     </div>
                     <span style={{ fontSize: '11px', background: '#374151', padding: '1px 6px', borderRadius: '4px', color: '#9ca3af' }}>
-                      Learning Rate / Architecture
+                      Learning Rate / Optimizer
                     </span>
                   </div>
                   <div style={{ fontSize: '12.5px', color: '#d1d5db', marginTop: '8px', lineHeight: '1.5' }}>
-                    <strong>Dấu hiệu:</strong> Sau 5-10 Epochs, Train Loss chỉ dao động quanh 2.5 - 3.0, mAP không tăng.
+                    <strong>Dấu hiệu:</strong> Sau 5-10 Epochs, Train Loss dao động quanh giá trị cao, mAP không tăng.
                     <br />
-                    <strong>Cách khắc phục:</strong>
-                    <ul style={{ paddingLeft: '18px', marginTop: '4px', color: '#9ca3af' }}>
-                      <li><strong>Learning Rate quá lớn hoặc quá nhỏ:</strong> Thử giảm LR từ <code>1e-2</code> xuống <code>1e-3</code> với OneCycleLR scheduler.</li>
-                      <li><strong>Kiểm tra nhãn dữ liệu:</strong> Bounding box bị lệch tọa độ hoặc nhãn rỗng trong <code>annotations.json</code>.</li>
-                      <li><strong>Khởi tạo trọng số (Transfer Learning):</strong> Không train từ con số 0 (from scratch), luôn load pre-trained weights (YOLOv8n / COCO).</li>
-                    </ul>
+                    <strong>Nguyên nhân:</strong> Learning rate quá lớn làm gradient phát nổ hoặc dữ liệu chưa chuẩn hóa (chưa rescale về [0, 1]).
+                    <br />
+                    <strong>Giải pháp:</strong> Giảm Learning Rate xuống <code>0.001</code> với AdamW, bổ sung Warmup 3 epochs.
                   </div>
                 </div>
 
-                {/* Tình huống 2: Train Loss giảm nhưng Val Loss tăng (Overfitting) */}
-                <div style={{ background: '#171e27', border: '1px solid #ef4444', borderRadius: '8px', padding: '16px', backgroundColor: 'rgba(239, 68, 68, 0.04)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ fontWeight: 600, fontSize: '13px', color: '#ef4444' }}>
-                      2. Train Loss giảm nhưng Val Loss tăng vọt (Overfitting - Học vẹt)
-                    </div>
-                    <span style={{ fontSize: '11px', background: 'rgba(239, 68, 68, 0.2)', padding: '1px 6px', borderRadius: '4px', color: '#ef4444' }}>
-                      Data Augmentation / Early Stop
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '12.5px', color: '#d1d5db', marginTop: '8px', lineHeight: '1.5' }}>
-                    <strong>Dấu hiệu:</strong> Mô hình nhận diện cực tốt trên tập Train (mAP 98%), nhưng đưa ảnh lạ vào test thì sót cầu thủ.
-                    <br />
-                    <strong>Cách khắc phục:</strong>
-                    <ul style={{ paddingLeft: '18px', marginTop: '4px', color: '#9ca3af' }}>
-                      <li><strong>Kích hoạt Early Stopping:</strong> Dừng huấn luyện tại Epoch 15 khi Val Loss bắt đầu tăng trở lại (xem tab Biểu đồ).</li>
-                      <li><strong>Tăng cường Data Augmentation:</strong> Lật ngang (Horizontal Flip), xoay nhẹ ($\pm 10^\circ$), thay đổi độ sáng màu áo đấu (Color Jitter).</li>
-                      <li><strong>Tăng Dropout / Weight Decay:</strong> Thêm Regularization $L_2$ để ngăn các trọng số quá lớn.</li>
-                    </ul>
-                  </div>
-                </div>
-
-                {/* Tình huống 3: Lỗi che khuất & Lóa sáng sân */}
                 <div style={{ background: '#171e27', border: '1px solid #374151', borderRadius: '8px', padding: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ fontWeight: 600, fontSize: '13px', color: '#38bdf8' }}>
-                      3. Cầu thủ che khuất nhau (Occlusion) & Lóa đèn sân vận động
+                    <div style={{ fontWeight: 600, fontSize: '13px', color: '#ef4444' }}>
+                      2. Hiện tượng Overfitting (Train Loss giảm nhưng Val Loss tăng)
                     </div>
                     <span style={{ fontSize: '11px', background: '#374151', padding: '1px 6px', borderRadius: '4px', color: '#9ca3af' }}>
-                      CLAHE / NMS Threshold
+                      Regularization / Early Stopping
                     </span>
                   </div>
                   <div style={{ fontSize: '12.5px', color: '#d1d5db', marginTop: '8px', lineHeight: '1.5' }}>
-                    <strong>Cách xử lý trong dự án thể thao:</strong>
-                    <ul style={{ paddingLeft: '18px', marginTop: '4px', color: '#9ca3af' }}>
-                      <li><strong>Áp dụng CLAHE:</strong> Cân bằng sáng cục bộ trước khi đưa ảnh vào model để nhìn rõ số áo khi đèn sân lóa.</li>
-                      <li><strong>NMS (Non-Maximum Suppression):</strong> Hạ ngưỡng IoU NMS từ 0.7 xuống 0.45 để tách rời 2 cầu thủ tranh chấp bóng gần nhau.</li>
-                    </ul>
+                    <strong>Dấu hiệu:</strong> Train Loss giảm sâu về 0.12 nhưng Val Loss tăng vọt sau Epoch 18 (từ 0.95 lên 1.95).
+                    <br />
+                    <strong>Hậu quả:</strong> Mô hình học vẹt dữ liệu train, thất bại hoàn toàn trên tập test thực tế ngoài đời.
+                    <br />
+                    <strong>Giải pháp:</strong> Kích hoạt <strong>Early Stopping</strong> tại Epoch 15 (điểm cực tiểu của Val Loss).
                   </div>
                 </div>
               </div>
 
-              {/* CỘT PHẢI: LỜI KHUYÊN DÀNH CHO BÀI LAB CỦA BẠN */}
+              {/* CỘT PHẢI: CHECKLIST CHUYÊN MÔN */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>🎯</span>
-                  <span>Đánh giá Trực tiếp Bài làm Hiện tại</span>
+                  <span>📋</span>
+                  <span>Checklist Tiêu chuẩn Nghiệp vụ</span>
                 </div>
 
-                <div
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)',
-                    border: '1px solid #10b981',
-                    borderRadius: '8px',
-                    padding: '18px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontWeight: 600, fontSize: '14px' }}>
-                    <span>✅</span>
-                    <span>Pipeline đã sẵn sàng cho Production!</span>
-                  </div>
-                  <div style={{ marginTop: '10px', fontSize: '12.5px', color: '#d1d5db', lineHeight: '1.6' }}>
-                    <div>• <strong>Độ chính xác đếm cầu thủ:</strong> 100% trên 5 test frames.</div>
-                    <div>• <strong>Heatmap correlation:</strong> 88.0% (vượt tiêu chuẩn 75%).</div>
-                    <div>• <strong>Độ trễ trung bình:</strong> ~0.5 ms / case (siêu tối ưu).</div>
-                  </div>
-                </div>
-
-                {/* GỢI Ý BƯỚC ĐÓNG GÓI BÀN GIAO */}
-                <div style={{ background: '#171e27', border: '1px solid #374151', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '13px', color: '#818cf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>📦</span>
-                    <span>Quy trình Bàn giao Doanh nghiệp (Handover Checklist)</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#10b981' }}>✓</span>
-                      <span>Mã nguồn đóng gói module: <code>VideoAnalyzer</code> trong <code>solution/predict.py</code></span>
+                <div style={{ background: '#171e27', border: '1px solid #374151', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'start', gap: '10px' }}>
+                    <span style={{ color: '#10b981', fontWeight: 'bold' }}>✓</span>
+                    <div style={{ fontSize: '12.5px', color: '#d1d5db' }}>
+                      <strong>Dữ liệu & Cấu hình:</strong> Tách biệt siêu tham số khỏi mã nguồn, lưu trữ trong file config chuẩn hóa.
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#10b981' }}>✓</span>
-                      <span>Dữ liệu train/test được phân lập chuẩn tại <code>data/train</code>, <code>data/test</code></span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'start', gap: '10px' }}>
+                    <span style={{ color: '#10b981', fontWeight: 'bold' }}>✓</span>
+                    <div style={{ fontSize: '12.5px', color: '#d1d5db' }}>
+                      <strong>Độ trễ thời gian thực (SLA):</strong> Tối ưu hóa suy luận để đạt tốc độ xử lý &lt; 20ms/request.
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#10b981' }}>✓</span>
-                      <span>Hỗ trợ cả Frame ảnh đơn lẻ và Video clip 750 frames liên tục</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#10b981' }}>✓</span>
-                      <span>File cấu hình độc lập <code>configs/tactical_config.yaml</code></span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'start', gap: '10px' }}>
+                    <span style={{ color: '#10b981', fontWeight: 'bold' }}>✓</span>
+                    <div style={{ fontSize: '12.5px', color: '#d1d5db' }}>
+                      <strong>Độ tin cậy & Fallback:</strong> Luôn có xử lý ngoại lệ cho các trường hợp dữ liệu rỗng hoặc sai kích thước.
                     </div>
                   </div>
                 </div>
@@ -324,418 +1042,113 @@ export function LabCopilotPanel({ onClose, currentAccuracy = 1.0, currentLatency
             </div>
           )}
 
-          {/* TAB 2: TRAINING LOSS & MAP CURVES */}
+          {/* TAB 3: LOSS CURVES */}
           {activeTab === 'curves' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f3f4f6' }}>
-                    Đồ thị Huấn luyện Mô hình & Phân tích Overfitting (30 Epochs)
+                  <h3 style={{ margin: 0, fontSize: '15px', color: '#f3f4f6' }}>
+                    Biểu đồ Huấn luyện & Chẩn đoán Điểm dừng Tối ưu (Early Stopping)
                   </h3>
-                  <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#9ca3af' }}>
-                    Rà chuột lên các mốc Epoch để xem thông số Train Loss, Validation Loss và mAP@50 tại từng thời điểm
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                    Rê chuột qua các điểm trên biểu đồ để xem chi tiết giá trị Loss và mAP50 theo từng Epoch
                   </p>
                 </div>
-
                 <div style={{ display: 'flex', gap: '16px', fontSize: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: 14, height: 3, background: '#38bdf8', borderRadius: 2 }} />
-                    <span style={{ color: '#d1d5db' }}>Train Loss (Tập học)</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: 14, height: 3, background: '#ef4444', borderRadius: 2 }} />
-                    <span style={{ color: '#d1d5db' }}>Validation Loss (Tập kiểm định)</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: 14, height: 3, background: '#10b981', borderRadius: 2, borderBottom: '1px dashed' }} />
-                    <span style={{ color: '#d1d5db' }}>mAP@50 Score</span>
-                  </div>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#34d399' }}>
+                    <span style={{ width: '12px', height: '3px', background: '#10b981' }} /> Train Loss
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f87171' }}>
+                    <span style={{ width: '12px', height: '3px', background: '#ef4444' }} /> Val Loss
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#a78bfa' }}>
+                    <span style={{ width: '12px', height: '3px', background: '#8b5cf6' }} /> mAP@50
+                  </span>
                 </div>
               </div>
 
-              {/* SVG INTERACTIVE LOSS CURVES CHART */}
-              <div
-                style={{
-                  background: '#0a0d12',
-                  border: '1px solid #1f2937',
-                  borderRadius: '8px',
-                  padding: '16px 20px',
-                  position: 'relative',
-                }}
-              >
-                <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: '240px', overflow: 'visible' }}>
-                  {/* Grid Lines */}
-                  {[0, 0.8, 1.6, 2.4, 3.2].map((val) => (
-                    <g key={val}>
-                      <line x1={padX} y1={yLoss(val)} x2={chartW - padX} y2={yLoss(val)} stroke="#1f2937" strokeWidth="1" strokeDasharray="3 3" />
-                      <text x={padX - 8} y={yLoss(val) + 4} fill="#6b7280" fontSize="10" textAnchor="end">
-                        {val.toFixed(1)}
-                      </text>
-                    </g>
-                  ))}
+              <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
+                <svg width="100%" height="240" viewBox={`0 0 ${chartW} ${chartH}`} style={{ overflow: 'visible' }}>
+                  <path d={trainLossPath} fill="none" stroke="#10b981" strokeWidth="2.5" />
+                  <path d={valLossPath} fill="none" stroke="#ef4444" strokeWidth="2.5" />
+                  <path d={mapPath} fill="none" stroke="#8b5cf6" strokeWidth="2" strokeDasharray="4 4" />
 
-                  {/* VÙNG OVERFITTING (EPOCH 15 TRỞ ĐI) */}
+                  {/* Early stopping line at Epoch 15 */}
+                  <line
+                    x1={xCoord(15)}
+                    y1={padY}
+                    x2={xCoord(15)}
+                    y2={chartH - padY}
+                    stroke="#f59e0b"
+                    strokeWidth="1.5"
+                    strokeDasharray="2 2"
+                  />
+                  <text x={xCoord(15) + 6} y={padY + 15} fill="#f59e0b" fontSize="10" fontWeight="bold">
+                    Optimal Checkpoint (Epoch 15)
+                  </text>
+
+                  {/* Overfitting zone */}
                   <rect
-                    x={xCoord(15)}
+                    x={xCoord(18)}
                     y={padY}
-                    width={xCoord(30) - xCoord(15)}
+                    width={xCoord(30) - xCoord(18)}
                     height={chartH - 2 * padY}
                     fill="rgba(239, 68, 68, 0.08)"
                   />
-                  <text x={xCoord(22.5)} y={padY + 16} fill="#ef4444" fontSize="10.5" fontWeight="bold" textAnchor="middle">
-                    ⚠️ VÙNG OVERFITTING (Val Loss tăng ngược)
-                  </text>
 
-                  {/* ĐƯỜNG EARLY STOPPING TẠI EPOCH 15 */}
-                  <line x1={xCoord(15)} y1={padY} x2={xCoord(15)} y2={chartH - padY} stroke="#10b981" strokeWidth="1.5" strokeDasharray="4 2" />
-                  <text x={xCoord(15)} y={chartH - padY + 18} fill="#10b981" fontSize="10" fontWeight="bold" textAnchor="middle">
-                    ⭐ Epoch 15 (Dừng tối ưu)
-                  </text>
-
-                  {/* CURVE PATHS */}
-                  <path d={trainLossPath} fill="none" stroke="#38bdf8" strokeWidth="2.5" />
-                  <path d={valLossPath} fill="none" stroke="#ef4444" strokeWidth="2.5" />
-                  <path d={mapPath} fill="none" stroke="#10b981" strokeWidth="2" strokeDasharray="4 2" />
-
-                  {/* DATA POINTS & HOVER */}
                   {TRAINING_HISTORY.map((d) => (
-                    <g key={d.epoch} onMouseEnter={() => setHoveredEpoch(d.epoch)} style={{ cursor: 'pointer' }}>
-                      <circle cx={xCoord(d.epoch)} cy={yLoss(d.valLoss)} r={hoveredEpoch === d.epoch ? 5 : 3} fill="#ef4444" stroke="#ffffff" strokeWidth="1" />
-                      <circle cx={xCoord(d.epoch)} cy={yLoss(d.trainLoss)} r={hoveredEpoch === d.epoch ? 5 : 3} fill="#38bdf8" stroke="#ffffff" strokeWidth="1" />
-                    </g>
+                    <circle
+                      key={d.epoch}
+                      cx={xCoord(d.epoch)}
+                      cy={yLoss(d.valLoss)}
+                      r={hoveredEpoch === d.epoch ? 5 : 3}
+                      fill={hoveredEpoch === d.epoch ? '#fbbf24' : '#ef4444'}
+                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={() => setHoveredEpoch(d.epoch)}
+                    />
                   ))}
                 </svg>
 
-                {/* HOVER TOOLTIP INFO */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginTop: '16px',
-                    padding: '10px 16px',
-                    background: '#13181e',
-                    borderRadius: '6px',
-                    border: '1px solid #374151',
-                    fontSize: '12px',
-                  }}
-                >
-                  <div>
-                    <span style={{ color: '#9ca3af' }}>Đang soi chi tiết: </span>
-                    <strong style={{ color: '#f3f4f6', fontSize: '13px' }}>Epoch {selectedData.epoch} / 30</strong>
-                  </div>
-                  <div style={{ display: 'flex', gap: '20px' }}>
-                    <div>Train Loss: <strong style={{ color: '#38bdf8' }}>{selectedData.trainLoss}</strong></div>
-                    <div>Validation Loss: <strong style={{ color: '#ef4444' }}>{selectedData.valLoss}</strong></div>
-                    <div>mAP@50: <strong style={{ color: '#10b981' }}>{(selectedData.map50 * 100).toFixed(0)}%</strong></div>
-                    <div>Trạng thái: <strong style={{ color: selectedData.epoch <= 15 ? '#10b981' : '#ef4444' }}>{selectedData.epoch <= 15 ? 'Đang học tốt' : 'Bị Overfitting'}</strong></div>
-                  </div>
-                </div>
-              </div>
-
-              {/* BÀI HỌC KỸ SƯ: CÁCH ĐỌC BIỂU ĐỒ */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', fontSize: '12.5px' }}>
-                <div style={{ background: '#171e27', padding: '14px', borderRadius: '8px', border: '1px solid #374151' }}>
-                  <div style={{ color: '#38bdf8', fontWeight: 600, marginBottom: '6px' }}>1. Giai đoạn Hội tụ (Epoch 1 - 10)</div>
-                  <div style={{ color: '#9ca3af', lineHeight: '1.4' }}>
-                    Cả Train Loss và Val Loss đều giảm mạnh cùng lúc. Mô hình đang học các đặc trưng cơ bản (cầu thủ, màu áo, quả bóng).
-                  </div>
-                </div>
-
-                <div style={{ background: '#171e27', padding: '14px', borderRadius: '8px', border: '1px solid #10b981' }}>
-                  <div style={{ color: '#10b981', fontWeight: 600, marginBottom: '6px' }}>2. Điểm Vàng Early Stop (Epoch 15)</div>
-                  <div style={{ color: '#9ca3af', lineHeight: '1.4' }}>
-                    Val Loss đạt đáy thấp nhất (0.95), mAP@50 đạt 83%. Đây là checkpoint tốt nhất cần lưu để bàn giao production.
-                  </div>
-                </div>
-
-                <div style={{ background: '#171e27', padding: '14px', borderRadius: '8px', border: '1px solid #ef4444' }}>
-                  <div style={{ color: '#ef4444', fontWeight: 600, marginBottom: '6px' }}>3. Hiện tượng Overfitting (Epoch 18+)</div>
-                  <div style={{ color: '#9ca3af', lineHeight: '1.4' }}>
-                    Train Loss tiếp tục giảm nhưng Val Loss lại tăng vọt lên 1.95. Mô hình bắt đầu "thuộc lòng" tập train, mất khả năng tổng quát hóa.
-                  </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', padding: '10px 14px', background: '#161c24', borderRadius: '6px', fontSize: '12px' }}>
+                  <span>Epoch: <strong>{selectedData.epoch}</strong></span>
+                  <span style={{ color: '#34d399' }}>Train Loss: <strong>{selectedData.trainLoss}</strong></span>
+                  <span style={{ color: '#f87171' }}>Val Loss: <strong>{selectedData.valLoss}</strong></span>
+                  <span style={{ color: '#a78bfa' }}>mAP@50: <strong>{selectedData.map50}</strong></span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: IMAGE PREPROCESSING & AUGMENTATION STUDIO */}
+          {/* TAB 4: PREPROCESSING STUDIO */}
           {activeTab === 'preprocessing' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f3f4f6' }}>
-                    Studio Thử nghiệm Tiền xử lý Ảnh (Computer Vision Preprocessing Studio)
-                  </h3>
-                  <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#9ca3af' }}>
-                    Quy trình xử lý ảnh chuyên sâu từ Ảnh xám, Khử nền mặt cỏ, Đạo hàm Gradient đến Cân bằng sáng CLAHE & Letterbox
-                  </p>
-                </div>
-
-                {/* FILTER CONTROLS - 6 BƯỚC BÀI BẢN */}
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {[
-                    { id: 'none', label: '1. Ảnh gốc (RGB)', title: 'Khung hình màu 3 kênh BGR nguyên bản' },
-                    { id: 'grayscale', label: '2. Ảnh xám (Grayscale)', title: 'Giảm chiều dữ liệu & Trích xuất cường độ sáng' },
-                    { id: 'bg_removal', label: '3. Khử nền mặt cỏ (HSV)', title: 'Tách nền cỏ xanh để cô lập cầu thủ & bóng' },
-                    { id: 'gradient', label: '4. Gradient & Cạnh biên', title: 'Đạo hàm Sobel / Canny trích xuất vạch sân' },
-                    { id: 'clahe', label: '5. Cân bằng sáng (CLAHE)', title: 'Cân bằng sáng thích nghi chống lóa & bóng râm' },
-                    { id: 'letterbox', label: '6. Letterbox (640×640)', title: 'Giữ nguyên tỷ lệ Aspect Ratio chống méo hình' },
-                  ].map((btn) => (
-                    <button
-                      key={btn.id}
-                      className={`btn btn--sm ${selectedFilter === btn.id ? 'btn--ember' : 'btn--ghost'}`}
-                      onClick={() => setSelectedFilter(btn.id as any)}
-                      title={btn.title}
-                      style={{ fontSize: '11.5px', padding: '4px 10px', fontWeight: selectedFilter === btn.id ? 600 : 400 }}
-                    >
-                      {btn.label}
-                    </button>
-                  ))}
-                </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px', color: '#f3f4f6' }}>
+                  Studio Thử nghiệm Tiền xử lý Ảnh Thực chiến
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                  Thử nghiệm tương tác các kỹ thuật cân bằng sáng CLAHE, Letterbox và trích xuất đặc trưng
+                </p>
               </div>
 
-              {/* IMAGE COMPARISON PREVIEW */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                {/* ẢNH GỐC */}
-                <div style={{ background: '#0a0d12', padding: '16px', borderRadius: '8px', border: '1px solid #1f2937', textAlign: 'center' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#9ca3af', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>ẢNH GỐC TỪ CAMERA (1920 × 1080)</span>
-                    <span style={{ fontSize: '10.5px', padding: '1px 6px', background: '#1f2937', borderRadius: '4px', color: '#cbd5e1' }}>RGB / BGR Raw</span>
-                  </div>
-                  <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', overflow: 'hidden', borderRadius: '6px', border: '1px solid #374151', background: '#000' }}>
-                    <img
-                      src="/api/workspaces/ws_01M5EQJ35JP1P71V4SVC0EFSGA/files/download?path=data%2Ftrain%2Ftrain_frame_000.jpg"
-                      alt="Original"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '8px' }}>
-                    Ánh sáng đèn chiếu mạnh, một số cầu thủ ở xa bị tối và mờ nhạt
-                  </div>
-                </div>
-
-                {/* ẢNH SAU TIỀN XỬ LÝ */}
-                <div style={{ background: '#0a0d12', padding: '16px', borderRadius: '8px', border: '1px solid #10b981', textAlign: 'center' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#10b981', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>ẢNH SAU TIỀN XỬ LÝ</span>
-                    <span style={{ fontSize: '10.5px', padding: '1px 6px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '4px', color: '#34d399' }}>
-                      {selectedFilter === 'grayscale' && 'KÊNH XÁM (Y)'}
-                      {selectedFilter === 'bg_removal' && 'KHỬ NỀN CỎ (HSV)'}
-                      {selectedFilter === 'gradient' && 'CANNY / SOBEL EDGES'}
-                      {selectedFilter === 'clahe' && 'CLAHE LAB'}
-                      {selectedFilter === 'letterbox' && 'LETTERBOX 640×640'}
-                      {selectedFilter === 'none' && 'ORIGINAL RGB'}
-                    </span>
-                  </div>
-
-                  <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', overflow: 'hidden', borderRadius: '6px', border: '1px solid #10b981', background: '#000' }}>
-                    <img
-                      src="/api/workspaces/ws_01M5EQJ35JP1P71V4SVC0EFSGA/files/download?path=data%2Ftrain%2Ftrain_frame_000.jpg"
-                      alt="Processed"
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        filter:
-                          selectedFilter === 'grayscale'
-                            ? 'grayscale(100%) contrast(1.15)'
-                            : selectedFilter === 'bg_removal'
-                            ? 'contrast(2.2) brightness(0.7) hue-rotate(140deg) saturate(2.5)'
-                            : selectedFilter === 'gradient'
-                            ? 'grayscale(100%) invert(1) contrast(5) brightness(1.2)'
-                            : selectedFilter === 'clahe'
-                            ? 'contrast(1.45) brightness(1.15) saturate(1.25)'
-                            : selectedFilter === 'letterbox'
-                            ? 'brightness(0.98)'
-                            : 'none',
-                        transition: 'filter 0.25s ease',
-                      }}
-                    />
-
-                    {/* VÙNG ĐỆM LETTERBOX MINH HỌA NẾU CHỌN LETTERBOX */}
-                    {selectedFilter === 'letterbox' && (
-                      <>
-                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '10%', background: 'rgba(114, 114, 114, 0.85)', display: 'grid', placeItems: 'center', fontSize: '9px', color: '#fff', borderBottom: '1px dashed #fff' }}>
-                          Padding Xám (114, 114, 114)
-                        </div>
-                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '10%', background: 'rgba(114, 114, 114, 0.85)', display: 'grid', placeItems: 'center', fontSize: '9px', color: '#fff', borderTop: '1px dashed #fff' }}>
-                          Padding Xám (114, 114, 114)
-                        </div>
-                      </>
-                    )}
-
-                    {/* BOUNDING BOX 1: CẦU THỦ ÁO TRẮNG TRUNG LỘ (ĐỊNH VỊ CHUẨN XÁC 100%) */}
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: '60.8%',
-                        top: '59.2%',
-                        width: '2.2%',
-                        height: '7.2%',
-                        minWidth: '22px',
-                        minHeight: '48px',
-                        border: '2px solid #10b981',
-                        borderRadius: '2px',
-                        boxShadow: '0 0 10px rgba(16, 185, 129, 0.85)',
-                        pointerEvents: 'none',
-                      }}
-                    >
-                      <span style={{ position: 'absolute', top: '-14px', left: '-2px', background: '#10b981', color: '#fff', fontSize: '8px', padding: '1px 4px', fontWeight: 'bold', whiteSpace: 'nowrap', borderRadius: '2px' }}>
-                        Player 0.96
-                      </span>
-                    </div>
-
-                    {/* BOUNDING BOX 2: CẦU THỦ ÁO ĐỎ BÊN TRÁI VÒNG TRÒN */}
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: '22.1%',
-                        top: '53.2%',
-                        width: '2.0%',
-                        height: '6.8%',
-                        minWidth: '20px',
-                        minHeight: '46px',
-                        border: '2px solid #f97316',
-                        borderRadius: '2px',
-                        boxShadow: '0 0 8px rgba(249, 115, 22, 0.8)',
-                        pointerEvents: 'none',
-                      }}
-                    >
-                      <span style={{ position: 'absolute', top: '-14px', left: '-2px', background: '#f97316', color: '#fff', fontSize: '8px', padding: '1px 4px', fontWeight: 'bold', whiteSpace: 'nowrap', borderRadius: '2px' }}>
-                        Player 0.94
-                      </span>
-                    </div>
-
-                    {/* BOUNDING BOX 3: CẦU THỦ RÊ BÓNG BÊN PHẢI VÒNG TRÒN */}
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: '75.3%',
-                        top: '47.7%',
-                        width: '2.0%',
-                        height: '6.5%',
-                        minWidth: '20px',
-                        minHeight: '44px',
-                        border: '2px solid #38bdf8',
-                        borderRadius: '2px',
-                        boxShadow: '0 0 8px rgba(56, 189, 248, 0.8)',
-                        pointerEvents: 'none',
-                      }}
-                    >
-                      <span style={{ position: 'absolute', top: '-14px', left: '-2px', background: '#38bdf8', color: '#fff', fontSize: '8px', padding: '1px 4px', fontWeight: 'bold', whiteSpace: 'nowrap', borderRadius: '2px' }}>
-                        Player 0.95
-                      </span>
-                    </div>
-                  </div>
-
-                  <div style={{ fontSize: '11px', color: '#10b981', marginTop: '8px', textAlign: 'left', lineHeight: 1.4 }}>
-                    {selectedFilter === 'grayscale' && '✓ Ảnh xám (Grayscale): Giảm chiều ma trận từ 3 kênh xuống 1 kênh Y, tăng tốc độ xử lý gấp 3 lần và loại bỏ nhiễu màu.'}
-                    {selectedFilter === 'bg_removal' && '✓ Khử nền cỏ (HSV Masking): Tách biệt dải màu xanh cỏ sân vận động, cô lập triệt để cầu thủ và quả bóng trên nền tối.'}
-                    {selectedFilter === 'gradient' && '✓ Gradient Cạnh biên (Canny / Sobel): Trích xuất đường viền sân bóng 105×68m phục vụ biến đổi Homography 2D & viền người.'}
-                    {selectedFilter === 'clahe' && '✓ Cân bằng sáng thích nghi (CLAHE): Triệt tiêu bóng râm khán đài và chống lóa đèn pha, làm rõ chi tiết số áo và tăng độ nhạy +14%.'}
-                    {selectedFilter === 'letterbox' && '✓ Letterbox: Giữ nguyên tỷ lệ Aspect Ratio (16:9) với đệm xám 114, chống méo mó cơ thể cầu thủ khi nạp vào mạng YOLO 640×640.'}
-                    {selectedFilter === 'none' && 'Ảnh RGB gốc chưa qua xử lý tiền kỳ.'}
-                  </div>
-                </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {(['clahe', 'letterbox', 'grayscale', 'bg_removal'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    className={`btn btn--sm ${selectedFilter === filter ? 'btn--ember' : 'btn--ghost'}`}
+                    onClick={() => setSelectedFilter(filter)}
+                  >
+                    {filter.toUpperCase()}
+                  </button>
+                ))}
               </div>
 
-              {/* CODE MẪU TIỀN XỬ LÝ PYTHON DOANH NGHIỆP THEO TỪNG BỘ LỌC */}
-              <div style={{ background: '#171e27', border: '1px solid #374151', borderRadius: '8px', padding: '16px' }}>
-                <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#38bdf8', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>💻 Code mẫu OpenCV tích hợp vào bài giải ({selectedFilter.toUpperCase()}):</span>
-                  <span style={{ fontSize: '11px', color: '#9ca3af' }}>Copy vào solution/predict.py</span>
+              <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>
+                <div style={{ marginBottom: '8px', fontSize: '24px' }}>🔬</div>
+                <div>Đang xem hiệu ứng xử lý: <strong style={{ color: '#60a5fa' }}>{selectedFilter.toUpperCase()}</strong></div>
+                <div style={{ fontSize: '11px', marginTop: '4px' }}>
+                  Ảnh kích thước chuẩn: 640x640 · Cân bằng biểu đồ sáng LAB space
                 </div>
-                <pre
-                  style={{
-                    margin: 0,
-                    padding: '14px',
-                    background: '#0e1216',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontFamily: 'monospace',
-                    color: '#e5e7eb',
-                    overflowX: 'auto',
-                    border: '1px solid #1f2937',
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {selectedFilter === 'grayscale' && `# 1. Chuyển đổi không gian màu sang ảnh xám 1 kênh cường độ
-import cv2
-
-gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-# 2. Phân ngưỡng nhị phân Otsu tự động tìm ngưỡng phân tách sáng tối
-_, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-# Giảm dung lượng ma trận x3 lần, sẵn sàng cho trích xuất hình thái học (Morphology)`}
-
-                  {selectedFilter === 'bg_removal' && `# 1. Chuyển sang không gian màu HSV để phân tách màu cỏ sân bóng
-import cv2
-import numpy as np
-
-hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
-# 2. Định nghĩa ngưỡng màu xanh của thảm cỏ sân vận động
-lower_green = np.array([35, 40, 40])
-upper_green = np.array([85, 255, 255])
-grass_mask = cv2.inRange(hsv, lower_green, upper_green)
-
-# 3. Nghịch đảo mặt nạ để KHỬ MẶT CỎ, chỉ giữ lại Cầu thủ, Trọng tài và Bóng
-player_mask = cv2.bitwise_not(grass_mask)
-players_isolated = cv2.bitwise_and(frame, frame, mask=player_mask)
-print("Đã tách nền cỏ thành công: Cầu thủ và bóng nổi bật trên nền đen.")`}
-
-                  {selectedFilter === 'gradient' && `# 1. Làm mờ Gaussian để triệt tiêu nhiễu hạt
-import cv2
-
-blurred = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (5, 5), 0)
-
-# 2. Đạo hàm Sobel theo 2 trục X và Y để tính độ dốc Gradient
-sobelx = cv2.Sobel(blurred, cv2.CV_64F, 1, 0, ksize=3)
-sobely = cv2.Sobel(blurred, cv2.CV_64F, 0, 1, ksize=3)
-
-# 3. Lọc cạnh biên Canny để tìm vạch vôi sân cỏ phục vụ Homography 2D
-edges = cv2.Canny(blurred, threshold1=50, threshold2=150)
-lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=100, minLineLength=50, maxLineGap=10)`}
-
-                  {selectedFilter === 'clahe' && `# 1. Chuyển sang không gian màu LAB để tách kênh sáng Luminance (L)
-import cv2
-
-lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
-l, a, b = cv2.split(lab)
-
-# 2. Cân bằng sáng thích nghi cục bộ CLAHE trên kênh L (chống lóa & bóng râm)
-clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-cl = clahe.apply(l)
-
-# 3. Ghép kênh màu lại và chuyển về BGR
-enhanced = cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2BGR)
-print("Áp dụng CLAHE: Chi tiết viền người và số áo được làm rõ nét (+14% mAP).")`}
-
-                  {selectedFilter === 'letterbox' && `# 1. Letterbox Resize chuẩn YOLO: Giữ nguyên tỉ lệ khung hình gốc (16:9)
-import cv2
-import numpy as np
-
-def letterbox(img, new_shape=(640, 640), color=(114, 114, 114)):
-    h, w = img.shape[:2]
-    r = min(new_shape[0] / h, new_shape[1] / w)
-    new_unpad = (int(round(w * r)), int(round(h * r)))
-    
-    dw, dh = (new_shape[1] - new_unpad[0]) / 2, (new_shape[0] - new_unpad[1]) / 2
-    resized = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-    
-    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    canvas = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
-    return canvas`}
-
-                  {selectedFilter === 'none' && `# Đọc và xử lý frame ảnh gốc trực tiếp
-import cv2
-
-frame = cv2.imread("data/train/train_frame_000.jpg")
-print("Kích thước khung hình gốc:", frame.shape) # (1080, 1920, 3)`}
-                </pre>
               </div>
             </div>
           )}

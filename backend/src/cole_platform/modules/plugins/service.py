@@ -81,7 +81,8 @@ def scan_and_register(db: Session, actor_id: str | None = None) -> list[dict]:
             out.append({"plugin": pid, "version": ver, "result": "conflict: sources changed without version bump"})
             continue
         if not pv:
-            pv = PluginVersion(id=new_id("plv"), plugin_id=pid, version=ver, contract=m["contract"], image=m["image"],
+            image_tag = m.get("image") or f"cole/sim-{pid.split('.')[-1]}:{ver}"
+            pv = PluginVersion(id=new_id("plv"), plugin_id=pid, version=ver, contract=m["contract"], image=image_tag,
                                renderer=m.get("renderer", "generic-table@1"), manifest=m,
                                source_dir=d.relative_to(REPO_ROOT).as_posix(), source_sha=sha)
             db.add(pv)

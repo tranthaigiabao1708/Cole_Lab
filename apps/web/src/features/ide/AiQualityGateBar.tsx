@@ -2,6 +2,13 @@ import { useState } from 'react'
 import { Icon } from '../../core/design-system/icons'
 import type { TreeEntry } from './FileTree'
 
+export interface MissionHint {
+  level: number
+  type: 'concept' | 'technical' | 'code_snippet'
+  title: string
+  content: string
+}
+
 export interface QualityMission {
   id: string
   stepNumber: number
@@ -16,20 +23,259 @@ export interface QualityMission {
   targetFile?: string
   actionLabel?: string
   remedyCode?: string
+  requiredKeywords?: string[]
+  requiredFiles?: string[]
+  isBlocking?: boolean
+  hints?: MissionHint[]
 }
 
 interface AiQualityGateBarProps {
   tree: TreeEntry[]
   currentCode: string
   activeFilePath?: string | null
-  onOpenCopilot: () => void
-  onApplyFix: (missionId: string) => Promise<void>
+  rubric?: any[]
+  pluginId?: string
+  assignmentTitle?: string
+  onOpenCopilot: (missionId?: string) => void
+  onApplyFix: (missionId: string, targetFile?: string, code?: string) => Promise<void>
 }
 
-export function evaluateMissions(tree: TreeEntry[], currentCode: string): QualityMission[] {
+export function evaluateMissions(
+  tree: TreeEntry[],
+  currentCode: string,
+  rubric?: any[],
+  pluginId?: string,
+): QualityMission[] {
   const filePaths = new Set(tree.map((t) => t.path))
 
-  // 1. Tien xu ly anh (OpenCV / Albumentations)
+  // 1. If teacher defined custom rubric steps, use them dynamically!
+  if (rubric && Array.isArray(rubric) && rubric.length > 0) {
+    // Collect all required files across rubric for Step 0 Project Scaffold
+    const allRequiredFiles: string[] = []
+    rubric.forEach((item) => {
+      const rf = Array.isArray(item.required_files)
+        ? item.required_files
+        : typeof item.required_files === 'string'
+        ? item.required_files.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : []
+      rf.forEach((f: string) => {
+        if (!allRequiredFiles.includes(f)) allRequiredFiles.push(f)
+      })
+    })
+
+    const missions: QualityMission[] = []
+
+    // Always prepend Step 0: Project Structure Setup & Scaffold if there are designated files or always as first gate
+    const scaffoldFiles = allRequiredFiles.length > 0 ? allRequiredFiles : ['solution/predict.py']
+    const hasAllScaffoldFiles = scaffoldFiles.every(
+      (f) => filePaths.has(f) || tree.some((t) => t.path.endsWith(f) || t.path.includes(f)),
+    )
+    const hasSomeScaffoldFiles = scaffoldFiles.some(
+      (f) => filePaths.has(f) || tree.some((t) => t.path.endsWith(f) || t.path.includes(f)),
+    )
+
+    missions.push({
+      id: 'step_0_scaffold',
+      stepNumber: 0,
+      title: 'Bước 0: Thiết lập cấu trúc thư mục & tệp dự án',
+      shortLabel: '📁 Cấu trúc',
+      toolName: 'Project Scaffold',
+      category: 'file',
+      status: hasAllScaffoldFiles ? 'passed' : hasSomeScaffoldFiles ? 'warning' : 'missing',
+      description: `Quy trình bắt đầu: Thiết lập cấu trúc thư mục và các tệp mã nguồn theo quy định của giáo viên (${scaffoldFiles.join(', ')}).`,
+      industryContext: 'Trong dự án công nghiệp, việc tổ chức cấu trúc module hóa rõ ràng là bước tiên quyết trước khi lập trình.',
+      instructorNote: 'Giáo viên yêu cầu: Chuẩn bị đầy đủ các thư mục và tệp mã nguồn theo quy định trước khi viết logic.',
+      targetFile: scaffoldFiles[0],
+      actionLabel: 'Tạo cấu trúc dự án',
+      remedyCode: scaffoldFiles.map((f) => `# Tệp: ${f}`).join('\n'),
+      requiredFiles: scaffoldFiles,
+      requiredKeywords: [],
+      isBlocking: true,
+      hints: [
+        {
+          level: 1,
+          type: 'concept',
+          title: '💡 Gợi ý định hướng (Khái niệm)',
+          content: `Tổ chức dự án bao gồm các tệp/thư mục: ${scaffoldFiles.join(', ')}. Hãy tách biệt giữa mã nguồn giải thuật, tệp cấu hình và dữ liệu kiểm thử.`,
+        },
+        {
+          level: 2,
+          type: 'technical',
+          title: '🔍 Gợi ý kỹ thuật & Thư viện',
+          content: 'Sử dụng thanh Explorer bên trái để bấm nút (+) tạo tệp hoặc thư mục. Hoặc bấm nút "Tạo nhanh cấu trúc mẫu" trong trợ giảng AI để tự động tạo khung.',
+        },
+        {
+          level: 3,
+          type: 'code_snippet',
+          title: '⚡ Khung mã tham khảo (Boilerplate)',
+          content: scaffoldFiles.map((f) => `touch "${f}"`).join('\n'),
+        },
+      ],
+    })
+
+    // Next: Step 1 (Việc 1), Step 2 (Việc 2)... from teacher's rubric
+    rubric.forEach((item, idx) => {
+      const stepNumber = idx + 1
+      const id = item.id || `step_${stepNumber}`
+      const title = item.title || `Việc ${stepNumber}`
+      const toolName = item.tool || 'Quy chuẩn'
+      
+      const reqKeywords: string[] = Array.isArray(item.required_keywords)
+        ? item.required_keywords
+        : typeof item.required_keywords === 'string'
+        ? item.required_keywords.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : []
+
+      const reqFiles: string[] = Array.isArray(item.required_files)
+        ? item.required_files
+        : typeof item.required_files === 'string'
+        ? item.required_files.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : []
+
+      const isBlocking = item.is_blocking !== false
+
+      // Check file existence
+      const hasFiles =
+        reqFiles.length === 0 ||
+        reqFiles.every((f) => filePaths.has(f) || tree.some((t) => t.path.endsWith(f) || t.path.includes(f)))
+
+      // Check keywords in current open code or filenames
+      const hasKeywords =
+        reqKeywords.length === 0 ||
+        reqKeywords.every((kw) => currentCode.toLowerCase().includes(kw.toLowerCase()))
+
+      let status: 'passed' | 'missing' | 'warning' = 'missing'
+      if (hasFiles && hasKeywords) {
+        status = 'passed'
+      } else if (hasFiles || hasKeywords) {
+        status = 'warning'
+      }
+
+      const hints: MissionHint[] = item.hints || [
+        {
+          level: 1,
+          type: 'concept',
+          title: '💡 Gợi ý định hướng (Khái niệm)',
+          content: item.mentor_hint || `Tìm hiểu nguyên lý và yêu cầu nghiệp vụ của bước: ${title}.`,
+        },
+        {
+          level: 2,
+          type: 'technical',
+          title: '🔍 Gợi ý kỹ thuật & Thư viện',
+          content: `Sử dụng công cụ ${toolName}. Yêu cầu tệp: ${reqFiles.join(', ') || 'theo cấu trúc bài nộp'}. Từ khóa bắt buộc: ${reqKeywords.join(', ') || 'theo chuẩn hàm'}.`,
+        },
+        {
+          level: 3,
+          type: 'code_snippet',
+          title: '⚡ Khung mã tham khảo (Boilerplate)',
+          content:
+            item.remedy_code ||
+            (reqKeywords.length
+              ? `# Khung mã hoàn thành ${title}\n` + reqKeywords.map((k) => `# Cần triển khai: ${k}`).join('\n')
+              : `# Hoàn thiện mã nguồn theo yêu cầu của ${title}\n`),
+        },
+      ]
+
+      missions.push({
+        id,
+        stepNumber,
+        title: `Việc ${stepNumber}: ${title}`,
+        shortLabel: item.short_label || `Việc ${stepNumber}`,
+        toolName,
+        category: reqFiles.length > 0 ? 'file' : 'code',
+        status,
+        description:
+          item.description ||
+          item.mentor_hint ||
+          `Thực hành theo chỉ dẫn của giảng viên cho bước ${title}.`,
+        industryContext:
+          item.industry_context ||
+          `Quy chuẩn kỹ thuật thực tế doanh nghiệp với công cụ ${toolName}.`,
+        instructorNote: item.mentor_hint || 'Yêu cầu của giảng viên: Hoàn thành đầy đủ điều kiện kiểm tra.',
+        targetFile: reqFiles[0] || (scaffoldFiles[0] || 'solution/predict.py'),
+        actionLabel: `Thực hiện ${title}`,
+        remedyCode: item.remedy_code || hints[2]?.content || '',
+        requiredKeywords: reqKeywords,
+        requiredFiles: reqFiles,
+        isBlocking,
+        hints,
+      })
+    })
+
+    return missions
+  }
+
+  // 2. Fallbacks based on simulator plugin type if teacher did not provide a custom rubric
+  if (pluginId === 'cole.rag-chatbot') {
+    const hasChunking = currentCode.includes('split') || currentCode.includes('chunk') || filePaths.has('app/chunker.py')
+    const hasIndex = filePaths.has('data/index.bin') || filePaths.has('app/vectorstore.py') || currentCode.includes('embedding')
+    const hasEndpoint = currentCode.includes('/query') || currentCode.includes('QueryResponse')
+    const hasCitation = currentCode.includes('citation') || currentCode.includes('source')
+
+    return [
+      {
+        id: 'chunking',
+        stepNumber: 1,
+        title: 'Bước 1: Tiền xử lý & Phân đoạn Tài liệu (Document Chunking)',
+        shortLabel: 'Chunking',
+        toolName: 'LangChain / Unstructured',
+        category: 'code',
+        status: hasChunking ? 'passed' : 'missing',
+        description: 'Tách tài liệu thành các đoạn văn bản (chunks) 500 ký tự với overlap 50 ký tự để giữ ngữ cảnh liền mạch.',
+        industryContext: 'Hệ thống RAG doanh nghiệp cần chiến lược chunking tối ưu để tránh mất mát ngữ cảnh tài liệu pháp lý.',
+        instructorNote: 'Giảng viên yêu cầu: Viết hàm phân đoạn văn bản có overlap.',
+        targetFile: 'app/chunker.py',
+        actionLabel: 'Tạo app/chunker.py',
+        remedyCode: `def chunk_documents(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:\n    return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size - overlap)]\n`,
+      },
+      {
+        id: 'embedding',
+        stepNumber: 2,
+        title: 'Bước 2: Vector Embedding & Đánh chỉ mục (Indexing)',
+        shortLabel: 'Embedding',
+        toolName: 'FAISS / Chroma',
+        category: 'file',
+        status: hasIndex ? 'passed' : 'missing',
+        description: 'Chuyển đổi text chunks thành vector 768 chiều và lưu trữ vào Vector Store để tìm kiếm tương đồng ngữ nghĩa.',
+        industryContext: 'Vector Index giúp tìm kiếm thông tin liên quan trong hàng triệu văn bản với độ trễ < 50ms.',
+        instructorNote: 'Giảng viên yêu cầu: Tạo index và cơ chế similarity search.',
+        targetFile: 'app/vectorstore.py',
+        actionLabel: 'Tạo app/vectorstore.py',
+        remedyCode: `class VectorStore:\n    def search(self, query: str, top_k: int = 3):\n        return [{"text": "Ngữ cảnh trích xuất...", "score": 0.95}]\n`,
+      },
+      {
+        id: 'endpoint',
+        stepNumber: 3,
+        title: 'Bước 3: Dịch vụ HTTP Endpoint POST /query',
+        shortLabel: 'HTTP Service',
+        toolName: 'FastAPI / Pydantic',
+        category: 'code',
+        status: hasEndpoint ? 'passed' : 'missing',
+        description: 'Xây dựng API service tiếp nhận truy vấn người dùng, tổng hợp câu trả lời và trả về JSON theo contract.',
+        industryContext: 'Dịch vụ RAG trong production luôn được đóng gói dưới dạng microservice RESTful API.',
+        instructorNote: 'Giảng viên yêu cầu: Hoàn thiện endpoint POST /query trong app/main.py.',
+        targetFile: 'app/main.py',
+        actionLabel: 'Hoàn thiện app/main.py',
+        remedyCode: `@app.post("/query")\ndef query_rag(req: QueryRequest):\n    return QueryResponse(answer="Câu trả lời từ tài liệu...", citations=["Tai_lieu.pdf:Trang 1"])\n`,
+      },
+      {
+        id: 'evaluation',
+        stepNumber: 4,
+        title: 'Bước 4: Đánh giá RAG Triad & Trích dẫn Nguồn',
+        shortLabel: 'RAG Triad Eval',
+        toolName: 'Ragas / TruLens',
+        category: 'code',
+        status: hasCitation ? 'passed' : 'missing',
+        description: 'Kiểm soát chất lượng: Context Relevance >= 0.8, Faithfulness >= 0.85, Answer Relevance >= 0.8.',
+        industryContext: 'Ngăn chặn ảo giác (hallucination) trước khi cho phép trợ lý AI tương tác với khách hàng.',
+        instructorNote: 'Giảng viên yêu cầu: Bắt buộc trả về danh sách trích dẫn citations.',
+        targetFile: 'app/main.py',
+        actionLabel: 'Bổ sung trích dẫn citations',
+      },
+    ]
+  }
+
+  // 3. Fallback for CV football heatmap
   const hasPreprocessing =
     currentCode.includes('preprocess') ||
     currentCode.includes('clahe') ||
@@ -37,14 +283,12 @@ export function evaluateMissions(tree: TreeEntry[], currentCode: string): Qualit
     currentCode.includes('normalize') ||
     filePaths.has('solution/preprocess.py')
 
-  // 2. Danh nhan du lieu (CVAT / Roboflow)
   const hasAnnotations =
     filePaths.has('annotations/annotations.json') ||
     filePaths.has('solution/annotations.json') ||
     filePaths.has('data/annotations.json') ||
     tree.some((t) => t.path.includes('annotation'))
 
-  // 3. Huan luyen & Theo doi thi nghiem (W&B / TensorBoard)
   const hasTrainingScript =
     filePaths.has('solution/train.py') ||
     filePaths.has('train.py') ||
@@ -52,21 +296,18 @@ export function evaluateMissions(tree: TreeEntry[], currentCode: string): Qualit
     currentCode.includes('train_tactical_model') ||
     currentCode.includes('optimizer')
 
-  // 4. Bieu do loss & Chan doan Overfitting (Matplotlib / FiftyOne)
   const hasLossCurves =
     filePaths.has('runs/train/curves.png') ||
     filePaths.has('artifacts/loss_curves.png') ||
     filePaths.has('reports/train_curves.png') ||
     tree.some((t) => t.path.includes('curves') || t.path.includes('loss'))
 
-  // 5. Sa ban 2D & Homography ban do nhiet (SciPy / StatsBomb)
   const hasTacticalDomain =
     currentCode.includes('analyze_video') ||
     currentCode.includes('heatmap_matrix') ||
     currentCode.includes('pitch_length') ||
     currentCode.includes('zone_14')
 
-  // 6. Toi uu hoa & Dong goi Service (ONNX Runtime / YAML Config)
   const hasOptimization =
     filePaths.has('configs/tactical_config.yaml') ||
     filePaths.has('config.yaml') ||
@@ -82,12 +323,12 @@ export function evaluateMissions(tree: TreeEntry[], currentCode: string): Qualit
       toolName: 'OpenCV / Albumentations',
       category: 'code',
       status: hasPreprocessing ? 'passed' : 'missing',
-      description: 'Ảnh từ camera truyền hình sân bóng bị chói sáng đèn cao áp và đổ bóng râm. Kỹ sư phải dùng CLAHE cân bằng sáng trên kênh L (LAB space) và Letterbox bù viền 640x640 tránh méo tỷ lệ cầu thủ.',
-      industryContext: 'Các hệ thống camera thể thao (như Hawk-Eye, StatsPerform) không bao giờ đưa frame thô vào model mà luôn có tiền xử lý chuẩn hóa để đảm bảo độ chính xác ổn định dưới mọi điều kiện thời tiết.',
-      instructorNote: 'Giảng viên yêu cầu: Không được đưa ảnh thô trực tiếp vào mô hình. Bắt buộc phải có hàm preprocess_frame hoặc preprocess_image.',
+      description: 'Ảnh từ camera truyền hình bị chói sáng đèn cao áp. Kỹ sư phải dùng CLAHE cân bằng sáng trên kênh L và Letterbox 640x640 tránh méo tỷ lệ.',
+      industryContext: 'Hệ thống Hawk-Eye, StatsPerform luôn chuẩn hóa ảnh trước khi nạp vào detector để đảm bảo ổn định dưới mọi thời tiết.',
+      instructorNote: 'Giảng viên yêu cầu: Bắt buộc phải có hàm preprocess_frame hoặc preprocess_image.',
       targetFile: 'solution/predict.py',
       actionLabel: 'Thêm hàm Tiền xử lý ảnh chuẩn CLAHE',
-      remedyCode: `    def preprocess_frame(self, frame_img):\n        """Tiền xử lý ảnh chuẩn: CLAHE cân bằng ánh sáng sân & Letterbox 640x640"""\n        return {"status": "preprocessed", "input_size": (640, 640), "clahe": True}`,
+      remedyCode: `    def preprocess_frame(self, frame_img):\n        """Tiền xử lý ảnh: CLAHE cân bằng ánh sáng sân & Letterbox 640x640"""\n        return {"status": "preprocessed", "input_size": (640, 640), "clahe": True}`,
     },
     {
       id: 'annotations',
@@ -97,9 +338,9 @@ export function evaluateMissions(tree: TreeEntry[], currentCode: string): Qualit
       toolName: 'CVAT / Roboflow',
       category: 'file',
       status: hasAnnotations ? 'passed' : 'missing',
-      description: 'Quy trình AI bắt buộc phải có tập dữ liệu nhãn Ground Truth (tọa độ Bounding Box, category: player, goalkeeper, referee, ball) theo chuẩn định dạng COCO / YOLO.',
-      industryContext: 'Tại các công ty AI thể thao, dữ liệu video được dán nhãn thông qua các nền tảng như CVAT hoặc Label Studio để đội ngũ Annotation kiểm định chất lượng trước khi nạp vào Pipeline train.',
-      instructorNote: 'Giảng viên yêu cầu: Học viên phải hiểu cấu trúc dữ liệu nhãn Ground Truth trong file annotations/annotations.json.',
+      description: 'Quy trình AI bắt buộc phải có tập dữ liệu nhãn Ground Truth (tọa độ Bounding Box, category: player, goalkeeper, referee, ball) theo chuẩn COCO.',
+      industryContext: 'Tại các công ty AI thể thao, dữ liệu video được dán nhãn qua CVAT hoặc Label Studio để kiểm định trước khi nạp vào train.',
+      instructorNote: 'Giảng viên yêu cầu: Cần file nhãn Ground Truth annotations/annotations.json.',
       targetFile: 'annotations/annotations.json',
       actionLabel: 'Khởi tạo file annotations/annotations.json',
     },
@@ -111,9 +352,9 @@ export function evaluateMissions(tree: TreeEntry[], currentCode: string): Qualit
       toolName: 'W&B / PyTorch',
       category: 'file',
       status: hasTrainingScript ? 'passed' : 'missing',
-      description: 'Huấn luyện mô hình phát hiện đối tượng với Loss kết hợp (CIoU + BCE), tối ưu bằng Optimizer AdamW (learning rate = 0.001, weight decay = 1e-4) và Data Augmentation (Mosaic, HSV Jitter).',
-      industryContext: 'Kỹ sư AI luôn tách riêng code inference và code training. Quá trình huấn luyện được log tự động lên công cụ theo dõi thí nghiệm như Weights & Biases (W&B) hoặc MLflow để so sánh các lần thử nghiệm.',
-      instructorNote: 'Giảng viên yêu cầu: Không chấp nhận chỉ nộp file predict thô. Bắt buộc phải có kịch bản huấn luyện solution/train.py hoàn chỉnh.',
+      description: 'Huấn luyện mô hình phát hiện đối tượng với Loss CIoU + BCE, optimizer AdamW và theo dõi qua kịch bản độc lập.',
+      industryContext: 'Kỹ sư AI luôn tách riêng code inference và code training để quản lý versioning mô hình.',
+      instructorNote: 'Giảng viên yêu cầu: Bắt buộc phải có kịch bản huấn luyện solution/train.py hoàn chỉnh.',
       targetFile: 'solution/train.py',
       actionLabel: 'Tạo kịch bản solution/train.py',
     },
@@ -125,9 +366,9 @@ export function evaluateMissions(tree: TreeEntry[], currentCode: string): Qualit
       toolName: 'TensorBoard / Matplotlib',
       category: 'file',
       status: hasLossCurves ? 'passed' : 'missing',
-      description: 'Theo dõi đường cong Train Loss vs Val Loss qua 30 Epochs. Nhận diện điểm dừng tối ưu tại Epoch 15 và hiện tượng Overfitting sau Epoch 18 (khi Train Loss giảm sâu nhưng Val Loss tăng ngược lại).',
-      industryContext: 'Trong doanh nghiệp, một mô hình có Loss train rất thấp nhưng không có đồ thị kiểm chứng Val Loss sẽ bị từ chối đưa lên Production vì rủi ro học vẹt cực lớn.',
-      instructorNote: 'Giảng viên yêu cầu: Phải có biểu đồ trực quan curves.png trong thư mục runs/train/ để chứng minh mô hình đạt điểm dừng Early Stopping tốt.',
+      description: 'Theo dõi đường cong Train Loss vs Val Loss qua các Epochs để xác định điểm dừng tối ưu Early Stopping.',
+      industryContext: 'Trong doanh nghiệp, một mô hình không có đồ thị kiểm chứng Val Loss sẽ bị từ chối đưa lên Production.',
+      instructorNote: 'Giảng viên yêu cầu: Phải có biểu đồ trực quan curves.png trong thư mục runs/train/.',
       targetFile: 'runs/train/curves.png',
       actionLabel: 'Chạy huấn luyện & Xuất biểu đồ curves.png',
     },
@@ -139,9 +380,9 @@ export function evaluateMissions(tree: TreeEntry[], currentCode: string): Qualit
       toolName: 'SciPy / StatsBomb',
       category: 'code',
       status: hasTacticalDomain ? 'passed' : 'missing',
-      description: 'Chiếu phối cảnh từ camera 3D xuống mặt sân phẳng 2D chuẩn FIFA (105m x 68m), tính toán ma trận mật độ nhiệt 14x21 vùng và phân tích cự ly đội hình (Compactness) cùng khu vực trọng điểm Zone 14.',
-      industryContext: 'Kết quả của mô hình phát hiện cầu thủ chỉ là tọa độ bounding box; giá trị thương mại cho Ban huấn luyện và HLV trưởng nằm ở dữ liệu bản đồ nhiệt chiến thuật và phân tích không gian.',
-      instructorNote: 'Giảng viên yêu cầu: Lớp VideoAnalyzer phải hoàn thành hàm analyze_video trả về heatmap_matrix kích thước 14x21 chuẩn hóa.',
+      description: 'Chiếu phối cảnh từ camera 3D xuống mặt sân phẳng 2D chuẩn FIFA (105m x 68m) và ma trận nhiệt 14x21.',
+      industryContext: 'Giá trị thương mại cho Ban huấn luyện nằm ở dữ liệu bản đồ nhiệt chiến thuật và cự ly đội hình.',
+      instructorNote: 'Giảng viên yêu cầu: Lớp VideoAnalyzer phải hoàn thành hàm analyze_video.',
       targetFile: 'solution/predict.py',
       actionLabel: 'Hoàn thiện hàm analyze_video',
     },
@@ -153,9 +394,9 @@ export function evaluateMissions(tree: TreeEntry[], currentCode: string): Qualit
       toolName: 'ONNX Runtime / Docker',
       category: 'config',
       status: hasOptimization ? 'passed' : 'missing',
-      description: 'Tách toàn bộ tham số ra file cấu hình độc lập configs/tactical_config.yaml, chuyển đổi mô hình sang ONNX FP16 để đạt SLA thời gian thực <= 15ms/frame (60 FPS broadcast).',
-      industryContext: 'Một service AI bàn giao cho bộ phận kỹ thuật / DevOps bắt buộc phải có file config cấu hình rõ ràng và khả năng chạy độc lập qua CLI / Docker container.',
-      instructorNote: 'Giảng viên yêu cầu: Toàn bộ tham số kích thước sân, ngưỡng NMS và SLA độ trễ phải được cấu hình trong configs/tactical_config.yaml.',
+      description: 'Tách tham số ra file configs/tactical_config.yaml, chuyển đổi mô hình sang ONNX FP16 để đạt SLA <= 15ms/frame.',
+      industryContext: 'Dịch vụ AI bàn giao cho DevOps bắt buộc phải có file config cấu hình và khả năng chạy độc lập.',
+      instructorNote: 'Giảng viên yêu cầu: Cấu hình tham số kích thước sân và ngưỡng NMS trong configs/tactical_config.yaml.',
       targetFile: 'configs/tactical_config.yaml',
       actionLabel: 'Tạo configs/tactical_config.yaml',
     },
@@ -166,13 +407,16 @@ export function AiQualityGateBar({
   tree,
   currentCode,
   activeFilePath,
+  rubric,
+  pluginId,
+  assignmentTitle,
   onOpenCopilot,
   onApplyFix,
 }: AiQualityGateBarProps) {
-  const missions = evaluateMissions(tree, currentCode)
+  const missions = evaluateMissions(tree, currentCode, rubric, pluginId)
   const passedCount = missions.filter((m) => m.status === 'passed').length
   const totalCount = missions.length
-  const pct = Math.round((passedCount / totalCount) * 100)
+  const pct = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 100
 
   const [selectedMission, setSelectedMission] = useState<QualityMission | null>(null)
   const [applying, setApplying] = useState(false)
@@ -208,7 +452,7 @@ export function AiQualityGateBar({
             }}
           >
             <Icon name="alert" size={13} />
-            CV Service Pipeline:
+            {assignmentTitle ? `${assignmentTitle.slice(0, 24)}...:` : 'Quy trình Thực hành:'}
           </span>
           <span
             style={{
@@ -221,7 +465,7 @@ export function AiQualityGateBar({
               border: `1px solid ${pct === 100 ? 'rgba(52, 211, 153, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
             }}
           >
-            {passedCount}/{totalCount} Chặng Chuẩn ({pct}%)
+            {passedCount}/{totalCount} Bước ({pct}%)
             {activeFilePath && (
               <span style={{ marginLeft: '4px', opacity: 0.7, fontWeight: 'normal' }}>
                 · {activeFilePath.split('/').pop()}
@@ -230,15 +474,16 @@ export function AiQualityGateBar({
           </span>
         </div>
 
-        {/* 6 Bước quy trình chuẩn doanh nghiệp */}
+        {/* Các Bước do giảng viên thêm thủ công */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
           {missions.map((m) => {
             const isPassed = m.status === 'passed'
+            const isWarning = m.status === 'warning'
             return (
               <button
                 key={m.id}
                 onClick={() => setSelectedMission(m)}
-                title={`${m.title} [Tool: ${m.toolName}] - ${isPassed ? 'Đã đạt chuẩn' : 'BẤM ĐỂ KHÁM PHÁ NHIỆM VỤ THỰC TẾ'}`}
+                title={`${m.title} [Tool: ${m.toolName}] - ${isPassed ? 'Đã đạt chuẩn' : 'Bấm để xem hướng dẫn & gợi ý'}`}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -248,250 +493,253 @@ export function AiQualityGateBar({
                   fontSize: '11px',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  border: isPassed ? '1px solid rgba(52, 211, 153, 0.3)' : '1px solid rgba(239, 68, 68, 0.45)',
-                  background: isPassed ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.16)',
-                  color: isPassed ? '#34d399' : '#fca5a5',
-                  transition: 'all 0.2s ease',
-                  boxShadow: !isPassed ? '0 0 8px rgba(239, 68, 68, 0.25)' : 'none',
+                  border: isPassed
+                    ? '1px solid #10b981'
+                    : isWarning
+                    ? '1px solid #f59e0b'
+                    : '1px solid #ef4444',
+                  background: isPassed
+                    ? 'rgba(16, 185, 129, 0.15)'
+                    : isWarning
+                    ? 'rgba(245, 158, 11, 0.15)'
+                    : 'rgba(239, 68, 68, 0.15)',
+                  color: isPassed ? '#34d399' : isWarning ? '#fbbf24' : '#f87171',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '15px',
-                    height: '15px',
-                    borderRadius: '50%',
-                    background: isPassed ? '#10b981' : '#ef4444',
-                    color: '#ffffff',
-                    fontSize: '10px',
-                    fontWeight: 800,
-                  }}
-                >
-                  {isPassed ? '✓' : '?'}
-                </span>
+                <span>{isPassed ? '✓' : isWarning ? '⚡' : '○'}</span>
                 <span>{m.shortLabel}</span>
-                <span
-                  style={{
-                    fontSize: '9px',
-                    padding: '1px 4px',
-                    borderRadius: '3px',
-                    background: 'rgba(255, 255, 255, 0.08)',
-                    color: isPassed ? '#6ee7b7' : '#f87171',
-                    fontWeight: 'normal',
-                  }}
-                >
-                  {m.toolName.split('/')[0].trim()}
-                </span>
               </button>
             )
           })}
         </div>
 
-        {/* Nút Trợ lý AI */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-          <button
-            onClick={onOpenCopilot}
-            className="btn btn--ghost btn--sm"
-            style={{
-              padding: '3px 8px',
-              fontSize: '11px',
-              color: '#818cf8',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              fontWeight: 600,
-            }}
-          >
-            <Icon name="terminal" size={13} />
-            Cố vấn Hướng dẫn
-          </button>
-        </div>
+        {/* Nút Mở Cố vấn Mentor */}
+        <button
+          className="btn btn--sm"
+          onClick={() => onOpenCopilot()}
+          style={{
+            background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
+            color: '#ffffff',
+            border: 'none',
+            padding: '4px 10px',
+            fontSize: '11px',
+            fontWeight: 600,
+            borderRadius: '6px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            flexShrink: 0,
+            boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+          }}
+        >
+          <Icon name="terminal" size={13} />
+          <span>Cố vấn & Gợi ý</span>
+        </button>
       </div>
 
-      {/* THẺ NHIỆM VỤ KHÁM PHÁ (ENTERPRISE MISSION CARD MODAL) */}
+      {/* MODAL CHI TIẾT NHIỆM VỤ */}
       {selectedMission && (
+        <QualityMissionDetailModal
+          mission={selectedMission}
+          onClose={() => setSelectedMission(null)}
+          onOpenCopilot={() => {
+            setSelectedMission(null)
+            onOpenCopilot(selectedMission.id)
+          }}
+          onApplyFix={async () => {
+            setApplying(true)
+            try {
+              await onApplyFix(selectedMission.id, selectedMission.targetFile, selectedMission.remedyCode)
+              setSelectedMission(null)
+            } finally {
+              setApplying(false)
+            }
+          }}
+          isApplying={applying}
+        />
+      )}
+    </>
+  )
+}
+
+function QualityMissionDetailModal({
+  mission,
+  onClose,
+  onOpenCopilot,
+  onApplyFix,
+  isApplying,
+}: {
+  mission: QualityMission
+  onClose: () => void
+  onOpenCopilot: () => void
+  onApplyFix: () => Promise<void>
+  isApplying: boolean
+}) {
+  const isPassed = mission.status === 'passed'
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.75)',
+        backdropFilter: 'blur(4px)',
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '620px',
+          background: '#161b22',
+          border: '1px solid #30363d',
+          borderRadius: '10px',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header Modal */}
         <div
           style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 10000,
+            padding: '16px 20px',
+            borderBottom: '1px solid #21262d',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
+            justifyContent: 'space-between',
+            background: isPassed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
           }}
-          onClick={() => setSelectedMission(null)}
         >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: '720px',
-              background: '#161b22',
-              border: `1px solid ${selectedMission.status === 'passed' ? '#10b981' : '#f59e0b'}`,
-              borderRadius: '12px',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
-              overflow: 'hidden',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span
               style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                background: isPassed ? '#10b981' : '#f59e0b',
+                color: '#fff',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '16px 20px',
-                background: selectedMission.status === 'passed' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                borderBottom: '1px solid #30363d',
+                justifyContent: 'center',
+                fontWeight: 'bold',
+                fontSize: '14px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: selectedMission.status === 'passed' ? '#10b981' : '#ef4444',
-                    color: '#fff',
-                    fontSize: '18px',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  {selectedMission.status === 'passed' ? '✓' : '?'}
-                </span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f3f4f6' }}>
-                    {selectedMission.title}
-                  </h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        padding: '1px 6px',
-                        borderRadius: '4px',
-                        background: 'rgba(99, 102, 241, 0.2)',
-                        color: '#818cf8',
-                        fontWeight: 600,
-                      }}
-                    >
-                      Công cụ thực tế: {selectedMission.toolName}
-                    </span>
-                    <span style={{ fontSize: '11px', color: '#9ca3af' }}>
-                      Trạng thái:{' '}
-                      <strong style={{ color: selectedMission.status === 'passed' ? '#34d399' : '#f87171' }}>
-                        {selectedMission.status === 'passed' ? 'ĐÃ ĐẠT TIÊU CHUẨN' : 'CHƯA KHÁM PHÁ (BẮT BUỘC)'}
-                      </strong>
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedMission(null)}
-                className="btn btn--ghost btn--sm"
-                style={{ color: '#9ca3af' }}
-              >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div
-                style={{
-                  background: 'rgba(239, 68, 68, 0.08)',
-                  borderLeft: '4px solid #ef4444',
-                  padding: '12px 14px',
-                  borderRadius: '4px',
-                  fontSize: '13px',
-                  lineHeight: '1.5',
-                  color: '#fca5a5',
-                }}
-              >
-                <strong>⚠️ Nhắc nhở từ Giảng viên & Ban Đánh giá:</strong>
-                <p style={{ margin: '4px 0 0', color: '#e5e7eb' }}>{selectedMission.instructorNote}</p>
-              </div>
-
-              <div>
-                <h4 style={{ margin: '0 0 6px', fontSize: '12px', color: '#9ca3af', textTransform: 'uppercase' }}>
-                  Bản chất trong thực tế doanh nghiệp
-                </h4>
-                <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.6', color: '#d1d5db' }}>
-                  {selectedMission.description}
-                </p>
-                <p style={{ margin: '6px 0 0', fontSize: '12px', lineHeight: '1.5', color: '#9ca3af', fontStyle: 'italic' }}>
-                  💡 {selectedMission.industryContext}
-                </p>
-              </div>
-
-              {selectedMission.targetFile && (
-                <div style={{ fontSize: '12px', color: '#9ca3af' }}>
-                  File kiểm tra mã nguồn:{' '}
-                  <code style={{ background: '#0d1117', padding: '2px 6px', borderRadius: '4px', color: '#58a6ff' }}>
-                    {selectedMission.targetFile}
-                  </code>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingTop: '12px',
-                  borderTop: '1px solid #30363d',
-                  marginTop: '8px',
-                }}
-              >
-                <button
-                  className="btn btn--ghost btn--sm"
-                  onClick={() => {
-                    setSelectedMission(null)
-                    onOpenCopilot()
-                  }}
-                  style={{ color: '#818cf8', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Icon name="terminal" size={14} />
-                  Mở Cố vấn Chuyên môn
-                </button>
-
-                {selectedMission.status === 'missing' && (
-                  <button
-                    className="btn btn--ember btn--sm"
-                    disabled={applying}
-                    onClick={async () => {
-                      setApplying(true)
-                      try {
-                        await onApplyFix(selectedMission.id)
-                        setSelectedMission(null)
-                      } finally {
-                        setApplying(false)
-                      }
-                    }}
-                    style={{
-                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                      border: 'none',
-                      color: '#ffffff',
-                      fontWeight: 600,
-                      boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)',
-                    }}
-                  >
-                    {applying ? 'Đang khởi tạo...' : selectedMission.actionLabel || 'Khám phá & Áp dụng ngay'}
-                  </button>
-                )}
+              {isPassed ? '✓' : '!'}
+            </span>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f0f6fc' }}>
+                {mission.title}
+              </h3>
+              <div style={{ fontSize: '11px', color: '#8b949e', marginTop: '2px' }}>
+                Công cụ: <strong style={{ color: '#58a6ff' }}>{mission.toolName}</strong> · Trạng thái:{' '}
+                <strong style={{ color: isPassed ? '#34d399' : '#f59e0b' }}>
+                  {isPassed ? 'ĐÃ ĐẠT TIÊU CHUẨN' : 'CHƯA ĐẠT / CẦN THỰC HIỆN'}
+                </strong>
               </div>
             </div>
           </div>
+          <button
+            onClick={onClose}
+            className="btn btn--ghost btn--sm"
+            style={{ color: '#8b949e', padding: '4px' }}
+          >
+            <Icon name="close" size={14} />
+          </button>
         </div>
-      )}
-    </>
+
+        {/* Nội dung Modal */}
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
+          <div>
+            <div style={{ fontWeight: 600, color: '#c9d1d9', marginBottom: '4px' }}>
+              🎯 Yêu cầu nhiệm vụ:
+            </div>
+            <p style={{ margin: 0, color: '#8b949e', lineHeight: '1.5' }}>{mission.description}</p>
+          </div>
+
+          <div
+            style={{
+              background: '#0d1117',
+              border: '1px solid #30363d',
+              borderRadius: '6px',
+              padding: '12px',
+            }}
+          >
+            <div style={{ fontWeight: 600, color: '#58a6ff', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>🏢</span> Thực tế môi trường doanh nghiệp:
+            </div>
+            <div style={{ color: '#8b949e', fontSize: '12px', lineHeight: '1.5' }}>
+              {mission.industryContext}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: 'rgba(99, 102, 241, 0.1)',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
+              borderRadius: '6px',
+              padding: '12px',
+            }}
+          >
+            <div style={{ fontWeight: 600, color: '#a5b4fc', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>👨‍🏫</span> Gợi ý & Hướng dẫn của Giảng viên:
+            </div>
+            <div style={{ color: '#e0e7ff', fontSize: '12px', lineHeight: '1.5' }}>
+              {mission.instructorNote}
+            </div>
+          </div>
+
+          {mission.targetFile && (
+            <div style={{ fontSize: '12px', color: '#8b949e' }}>
+              📁 Tệp liên quan: <code style={{ color: '#79c0ff' }}>{mission.targetFile}</code>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div
+          style={{
+            padding: '12px 20px',
+            borderTop: '1px solid #21262d',
+            background: '#0d1117',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <button
+            className="btn btn--ghost btn--sm"
+            onClick={onOpenCopilot}
+            style={{ color: '#a5b4fc', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Icon name="terminal" size={13} />
+            Mở Cố vấn xem Gợi ý 3 Cấp độ
+          </button>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn--ghost btn--sm" onClick={onClose}>
+              Đóng
+            </button>
+            {!isPassed && mission.remedyCode && (
+              <button
+                className="btn btn--ember btn--sm"
+                onClick={onApplyFix}
+                disabled={isApplying}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <span>{isApplying ? 'Đang áp dụng...' : 'Áp dụng mã gợi ý'}</span>
+                <Icon name="arrowRight" size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -560,17 +808,17 @@ export function QualityGateBlockedModal({
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#fca5a5' }}>
-              CHƯA ĐẠT CHUẨN ĐỒ ÁN DOANH NGHIỆP (QUALITY GATE BLOCKED)
+              CHƯA ĐẠT TIÊU CHUẨN KIỂM SOÁT BÀI THỰC HÀNH (QUALITY GATE BLOCKED)
             </h3>
             <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#e5e7eb' }}>
-              Quy định Giảng viên: Không được phép nộp bài khi chưa hoàn thành đầy đủ quy trình Computer Vision khép kín
+              Quy định Giảng viên: Cần hoàn thành các bước bắt buộc trước khi kích hoạt bộ giả lập nghiệm thu bài nộp
             </p>
           </div>
         </div>
 
         <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.6', color: '#d1d5db' }}>
-            Hệ thống phát hiện mã nguồn của bạn chỉ thực thi hàm suy luận thô mà chưa có quy trình chuẩn của một Kỹ sư Computer Vision thực chiến. Để được phép nghiệm thu hoặc nộp bài, bạn bắt buộc phải hoàn thành các hạng mục sau:
+            Hệ thống phát hiện mã nguồn của bạn còn thiếu các bước thực hành cốt lõi theo kịch bản của giảng viên. Để đảm bảo chất lượng, bạn cần hoàn thành các bước sau:
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -603,7 +851,7 @@ export function QualityGateBlockedModal({
                       fontWeight: 'bold',
                     }}
                   >
-                    ?
+                    !
                   </span>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: '13px', color: '#fecaca', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -629,7 +877,7 @@ export function QualityGateBlockedModal({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  Khám phá ngay
+                  Xem chi tiết
                 </button>
               </div>
             ))}
@@ -654,7 +902,7 @@ export function QualityGateBlockedModal({
               style={{ color: '#818cf8', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <Icon name="terminal" size={14} />
-              Mở Cố vấn Chuyên môn hướng dẫn
+              Mở Cố vấn xem hướng dẫn chi tiết
             </button>
             <button
               className="btn btn--ember btn--sm"

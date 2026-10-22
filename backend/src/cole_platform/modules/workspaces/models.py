@@ -17,3 +17,17 @@ class Workspace(TimestampMixin, Base):
     manifest: Mapped[dict] = mapped_column(JSON, default=dict)
     last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     __table_args__ = (UniqueConstraint("user_id", "assignment_version_id"),)
+
+
+class WorkspaceStepProgress(TimestampMixin, Base):
+    """Tracks learner progress through assignment rubric steps."""
+    __tablename__ = "workspace_step_progress"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspace.id", ondelete="CASCADE"), index=True)
+    step_id: Mapped[str] = mapped_column(String(80), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="in_progress")  # not_started | in_progress | passed
+    hints_unlocked_level: Mapped[int] = mapped_column(default=0)  # 0, 1, 2, 3
+    time_spent_seconds: Mapped[int] = mapped_column(default=0)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    __table_args__ = (UniqueConstraint("workspace_id", "step_id"),)
+

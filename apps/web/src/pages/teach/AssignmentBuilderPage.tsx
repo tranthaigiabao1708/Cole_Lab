@@ -136,6 +136,9 @@ export function AssignmentBuilderPage() {
     required_keywords: string
     required_files: string
     mentor_hint: string
+    hint_concept?: string
+    hint_technical?: string
+    hint_code?: string
     is_blocking: boolean
   }>>([
     {
@@ -290,6 +293,50 @@ export function AssignmentBuilderPage() {
         required_keywords: 'faithfulness, answer_relevancy',
         required_files: 'eval_results.json',
         mentor_hint: 'Đánh giá câu trả lời của mô hình RAG về độ trung thực và liên quan.',
+        hint_concept: 'Đo lường độ trung thực của câu trả lời so với các trích dẫn tài liệu nội bộ.',
+        hint_technical: 'Chấm điểm bộ ba RAG Triad: Context Relevance, Groundedness, Answer Relevance.',
+        hint_code: '{"faithfulness": 0.92, "context_relevance": 0.94, "answer_relevance": 0.96}',
+        is_blocking: true,
+      },
+    ])
+  }
+
+  const loadOkNgTemplate = () => {
+    setQualityGates([
+      {
+        id: 'preprocessing',
+        title: 'Chuẩn hóa ảnh linh kiện & Khử bóng lóa kim loại',
+        tool: 'OpenCV',
+        required_keywords: 'preprocess, equalizeHist, normalize',
+        required_files: '',
+        mentor_hint: 'Cân bằng histogram để khử phản xạ bóng lóa kim loại trên bề mặt linh kiện.',
+        hint_concept: 'Sử dụng cân bằng sáng để làm nổi bật vết xước kim loại trong điều kiện chiếu sáng phân cực.',
+        hint_technical: 'Dùng cv2.equalizeHist hoặc CLAHE với clipLimit=2.0 trên ảnh grayscale.',
+        hint_code: 'def preprocess(img):\n    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)\n    return cv2.equalizeHist(gray)',
+        is_blocking: true,
+      },
+      {
+        id: 'defect_detection',
+        title: 'Phát hiện vết nứt & Phân loại OK / NG',
+        tool: 'PyTorch / Torchvision',
+        required_keywords: 'predict, confidence, label',
+        required_files: 'solution/predict.py',
+        mentor_hint: 'Dự đoán nhãn OK hoặc NG cùng độ tự tin confidence score.',
+        hint_concept: 'Mô hình phân loại binary classification với hàm kích hoạt Sigmoid.',
+        hint_technical: 'Đầu ra cần có định dạng dict: {"label": "OK"|"NG", "confidence": float}.',
+        hint_code: 'def predict(sample):\n    # Giai thuat phan doan\n    return {"label": "OK", "confidence": 0.95}',
+        is_blocking: true,
+      },
+      {
+        id: 'threshold_tuning',
+        title: 'Tinh chỉnh ngưỡng phán đoán & F1 Score tối ưu',
+        tool: 'Scikit-learn',
+        required_keywords: 'decision_threshold, f1_score',
+        required_files: 'configs/threshold.json',
+        mentor_hint: 'Điều chỉnh threshold để đạt F1 Score > 92% và giảm thiểu lọt lỗi NG thành OK.',
+        hint_concept: 'Trong nhà máy, lỗi lọt phế phẩm (FN) gây thiệt hại lớn hơn nhiều so với báo nhầm (FP).',
+        hint_technical: 'Quét ngưỡng từ 0.3 đến 0.8 để tìm điểm cân bằng Precision / Recall cao nhất.',
+        hint_code: '{"decision_threshold": 0.65, "target_f1": 0.95}',
         is_blocking: true,
       },
     ])
@@ -335,6 +382,11 @@ export function AssignmentBuilderPage() {
           required_files: q.required_files.split(',').map((s) => s.trim()).filter(Boolean),
           mentor_hint: q.mentor_hint.trim(),
           is_blocking: q.is_blocking,
+          hints: [
+            { level: 1, type: 'concept', title: '💡 Gợi ý định hướng (Khái niệm)', content: q.hint_concept?.trim() || q.mentor_hint.trim() },
+            { level: 2, type: 'technical', title: '🔍 Gợi ý kỹ thuật & Thư viện', content: q.hint_technical?.trim() || `Sử dụng công cụ ${q.tool}` },
+            { level: 3, type: 'code_snippet', title: '⚡ Khung mã tham khảo (Boilerplate)', content: q.hint_code?.trim() || '' },
+          ],
         })),
       }
       const res = await api.post<{ id: string; slug: string; title: string }>('/assignments', payload)
@@ -669,14 +721,22 @@ export function AssignmentBuilderPage() {
               </button>
               <button
                 type="button"
+                className="btn btn--sm btn--ghost"
+                onClick={loadOkNgTemplate}
+                title="Nạp sẵn chặng chuẩn Kiểm định OK/NG"
+              >
+                <Icon name="list" size={13} /> Nạp mẫu OK / NG
+              </button>
+              <button
+                type="button"
                 className="btn btn--sm btn--secondary"
                 onClick={() => {
-                  const newId = `gate_${Date.now()}`
+                  const newId = `step_${Date.now()}`
                   setQualityGates((prev) => [
                     ...prev,
                     {
                       id: newId,
-                      title: 'Tiêu chí mới',
+                      title: `Việc ${prev.length + 1}: Thao tác xử lý dữ liệu`,
                       tool: 'Thư viện chuyên ngành',
                       required_keywords: '',
                       required_files: '',
@@ -686,14 +746,18 @@ export function AssignmentBuilderPage() {
                   ])
                 }}
               >
-                <Icon name="plus" size={13} /> Thêm tiêu chí
+                <Icon name="plus" size={13} /> Thêm việc cần làm
               </button>
             </div>
           </div>
           <div className="panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            <p className="muted" style={{ margin: 0, fontSize: 'var(--fs-sm)' }}>
-              Giảng viên thiết lập các mốc kỹ thuật, từ khóa code, tệp tin bắt buộc và lời gợi ý sư phạm. Trợ giảng tự động đối chiếu với code học viên để đặt dấu hỏi (?) gợi mở và áp dụng cổng chất lượng.
-            </p>
+            <div style={{ background: 'var(--paper-100)', padding: '12px 16px', borderRadius: '6px', fontSize: 'var(--fs-sm)', color: 'var(--ink-700)' }}>
+              <strong>📋 Thứ tự diễn ra khi học viên vào Lab:</strong>
+              <ul style={{ margin: '6px 0 0', paddingLeft: '20px' }}>
+                <li><strong>Bước 0:</strong> Học viên được AI hướng dẫn khởi tạo cấu trúc thư mục và tệp dự án (tự động trích xuất từ các tệp bạn khai báo bên dưới).</li>
+                <li><strong>Việc 1, Việc 2...:</strong> Học viên lần lượt thực hiện theo quy trình bạn thiết lập. AI sẽ theo sát mã nguồn học viên viết trong Editor và đưa ra gợi ý lũy tiến 3 cấp độ.</li>
+              </ul>
+            </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {qualityGates.map((q, idx) => (
@@ -726,7 +790,7 @@ export function AssignmentBuilderPage() {
                       >
                         {idx + 1}
                       </span>
-                      <strong style={{ fontSize: '14px' }}>Chặng {idx + 1}: {q.title}</strong>
+                      <strong style={{ fontSize: '14px' }}>Việc {idx + 1}: {q.title}</strong>
                       <span
                         style={{
                           padding: '2px 8px',
@@ -809,16 +873,45 @@ export function AssignmentBuilderPage() {
                     </label>
                   </div>
 
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
+                    <label className="field">
+                      <span className="field__label">💡 Gợi ý Cấp 1: Định hướng & Khái niệm *</span>
+                      <input
+                        className="input"
+                        value={q.mentor_hint}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setQualityGates((prev) => prev.map((item, i) => (i === idx ? { ...item, mentor_hint: val, hint_concept: val } : item)))
+                        }}
+                        placeholder="Ví dụ: Cần cân bằng sáng và chuẩn hóa kích thước ảnh..."
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span className="field__label">🔍 Gợi ý Cấp 2: Kỹ thuật & Thư viện</span>
+                      <input
+                        className="input"
+                        value={q.hint_technical || ''}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setQualityGates((prev) => prev.map((item, i) => (i === idx ? { ...item, hint_technical: val } : item)))
+                        }}
+                        placeholder="Ví dụ: Dùng cv2.createCLAHE(clipLimit=2.0)..."
+                      />
+                    </label>
+                  </div>
+
                   <label className="field">
-                    <span className="field__label">Lời gợi ý sư phạm của Giảng viên (khi học viên thiếu hoặc tắc)</span>
-                    <input
-                      className="input"
-                      value={q.mentor_hint}
+                    <span className="field__label">⚡ Gợi ý Cấp 3: Khung mã tham khảo (Code Boilerplate)</span>
+                    <textarea
+                      className="textarea mono"
+                      rows={2}
+                      value={q.hint_code || ''}
                       onChange={(e) => {
                         const val = e.target.value
-                        setQualityGates((prev) => prev.map((item, i) => (i === idx ? { ...item, mentor_hint: val } : item)))
+                        setQualityGates((prev) => prev.map((item, i) => (i === idx ? { ...item, hint_code: val } : item)))
                       }}
-                      placeholder="Ví dụ: Nhắc học viên về ảnh hưởng của bóng râm và chói sáng đèn sân vận động..."
+                      placeholder="Ví dụ: def preprocess_frame(frame):\n    return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)"
                     />
                   </label>
 
